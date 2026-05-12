@@ -11,9 +11,12 @@ export default function AudioPage() {
   const [errorMsg, setErrorMsg] = useState("");
   const [copied, setCopied] = useState(false);
 
+  const [dragging, setDragging] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const busy = status === "recording" || status === "transcribing";
 
   async function transcribe(blob: Blob, filename: string) {
     setStatus("transcribing");
@@ -57,6 +60,14 @@ export default function AudioPage() {
     mediaRecorderRef.current?.stop();
   }
 
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(false);
+    if (busy) return;
+    const file = e.dataTransfer.files[0];
+    if (file) transcribe(file, file.name);
+  }
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -69,8 +80,6 @@ export default function AudioPage() {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
-
-  const busy = status === "recording" || status === "transcribing";
 
   return (
     <div className="px-8 py-10 max-w-2xl">
@@ -131,15 +140,30 @@ export default function AudioPage() {
             </>
           ) : (
             <>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={busy}
-                className="px-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white
-                  text-sm font-medium transition-colors disabled:opacity-40"
+              <div
+                onClick={() => !busy && fileInputRef.current?.click()}
+                onDragOver={(e) => { e.preventDefault(); if (!busy) setDragging(true); }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={handleDrop}
+                className={`w-full rounded-xl border-2 border-dashed px-6 py-10 flex flex-col
+                  items-center gap-3 cursor-pointer transition-colors select-none
+                  ${dragging
+                    ? "border-indigo-400 bg-indigo-50"
+                    : "border-gray-200 hover:border-indigo-300 hover:bg-gray-50"}
+                  ${busy ? "opacity-40 pointer-events-none" : ""}`}
               >
-                Seleccionar archivo
-              </button>
-              <p className="text-xs text-gray-400">m4a · mp3 · wav · ogg · webm</p>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"
+                  className={`w-8 h-8 ${dragging ? "text-indigo-500" : "text-gray-300"}`}>
+                  <path strokeLinecap="round" strokeLinejoin="round"
+                    d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                </svg>
+                <div className="text-center">
+                  <p className="text-sm font-medium text-gray-700">
+                    {dragging ? "Suelta aquí" : "Arrastra un archivo o haz clic"}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">m4a · mp3 · wav · ogg · webm</p>
+                </div>
+              </div>
               <input
                 ref={fileInputRef}
                 type="file"
