@@ -1,36 +1,57 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Laura's Toolbox
 
-## Getting Started
+Colección de herramientas personales con sidebar de navegación. Construido con Next.js App Router y Tailwind CSS.
 
-First, run the development server:
+## Herramientas disponibles
+
+| Herramienta | Ruta | Descripción |
+|---|---|---|
+| 🎙 Transcriptor | `/audio` | Transcribe audio en español usando Groq Whisper |
+
+## Setup local
 
 ```bash
+# 1. Instala dependencias
+npm install
+
+# 2. Configura las variables de entorno
+cp .env.local.example .env.local
+# → Edita .env.local y pega tu API key de Groq
+
+# 3. Arranca el servidor
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abre [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Variables de entorno
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variable | Descripción |
+|---|---|
+| `GROQ_API_KEY` | API key de Groq (gratuita en [console.groq.com](https://console.groq.com)) |
 
-## Learn More
+### Cómo obtener una API key de Groq (gratis)
 
-To learn more about Next.js, take a look at the following resources:
+1. Regístrate en [console.groq.com](https://console.groq.com)
+2. Ve a **API Keys** → **Create API Key**
+3. Copia la key y pégala en `.env.local`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Deploy en Vercel
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npx vercel
+```
 
-## Deploy on Vercel
+Añade `GROQ_API_KEY` en **Settings → Environment Variables** del proyecto en Vercel.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Añadir una nueva herramienta
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. Crea `app/(tools)/mi-herramienta/page.tsx`
+2. Añade una entrada en el array `tools` de `components/Sidebar.tsx`
+3. Añade una tarjeta en `app/(tools)/page.tsx`
+
+## Stack
+
+- **Next.js 16** (App Router) + TypeScript
+- **Tailwind CSS**
+- **Groq API** — Whisper large v3 turbo
