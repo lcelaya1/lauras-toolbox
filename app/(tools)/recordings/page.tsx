@@ -107,13 +107,32 @@ function RecordingCard({ rec, onDelete }: { rec: RecordingMeta; onDelete: () => 
   );
 }
 
-function ShortcutStep({ n, children }: { n: number; children: React.ReactNode }) {
+function Step({ n, color, children }: { n: number; color: "indigo" | "orange"; children: React.ReactNode }) {
+  const cls = color === "indigo"
+    ? "bg-indigo-100 text-indigo-700"
+    : "bg-orange-100 text-orange-700";
+  const text = color === "indigo" ? "text-indigo-800" : "text-orange-900";
   return (
     <div className="flex gap-3">
-      <span className="flex items-center justify-center w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-[11px] font-bold shrink-0 mt-0.5">
+      <span className={`flex items-center justify-center w-5 h-5 rounded-full ${cls} text-[11px] font-bold shrink-0 mt-0.5`}>
         {n}
       </span>
-      <p className="text-xs text-indigo-800 leading-relaxed">{children}</p>
+      <p className={`text-xs ${text} leading-relaxed`}>{children}</p>
+    </div>
+  );
+}
+
+function CopyBox({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-gray-200 mt-1">
+      <code className="text-xs text-indigo-700 break-all flex-1 select-all">{value}</code>
+      <button
+        onClick={() => { navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+        className="shrink-0 text-xs font-medium text-gray-400 hover:text-gray-700 transition-colors"
+      >
+        {copied ? "✓" : "Copiar"}
+      </button>
     </div>
   );
 }
@@ -204,97 +223,105 @@ export default function RecordingsPage() {
         </>
       )}
 
-      {/* ── IPHONE SETUP ── */}
+      {/* ── SETUP ── */}
       {tab === "setup" && (
         <div className="flex flex-col gap-6">
 
-          {/* How it works */}
-          <div className="rounded-xl border border-gray-200 bg-white p-5 flex flex-col gap-3">
-            <p className="text-sm font-semibold text-gray-900">Cómo funciona</p>
-            <p className="text-xs text-gray-500 leading-relaxed">
-              Un <strong>Atajo de iOS</strong> configurado como Automatización envía automáticamente
-              tu última Nota de Voz a esta app cada vez que cierras la app de Notas de Voz.
-              El audio se transcribe y aparece aquí al instante.
-            </p>
-          </div>
-
-          {/* Step by step */}
-          <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-5 flex flex-col gap-4">
-            <p className="text-sm font-semibold text-indigo-900">Configuración — 5 minutos</p>
-
+          {/* Part 1 — Cloudflare R2 */}
+          <div className="rounded-xl border border-orange-100 bg-orange-50 p-5 flex flex-col gap-4">
+            <div>
+              <p className="text-sm font-semibold text-orange-900">Parte 1 — Cloudflare R2 (almacenamiento)</p>
+              <p className="text-xs text-orange-700 mt-1">10 GB gratis · sin coste por reproducción · una sola vez</p>
+            </div>
             <div className="flex flex-col gap-3.5">
-              <ShortcutStep n={1}>
-                Abre la app <strong>Atajos</strong> en tu iPhone y ve a la pestaña <strong>Automatización</strong>.
-              </ShortcutStep>
-              <ShortcutStep n={2}>
-                Pulsa <strong>+</strong> → <strong>Nueva automatización</strong> → busca <strong>App</strong> → selecciona <strong>Notas de Voz</strong> → elige <strong>Se cierra</strong> → desactiva &ldquo;Preguntar antes de ejecutar&rdquo;.
-              </ShortcutStep>
-              <ShortcutStep n={3}>
-                Pulsa <strong>Siguiente</strong> → <strong>Nueva acción en blanco</strong> y añade estas acciones en orden:
-              </ShortcutStep>
-
-              <div className="ml-8 flex flex-col gap-2 bg-white rounded-lg border border-indigo-100 p-3">
-                {[
-                  "Obtener últimas notas de voz → Límite: 1",
-                  "Codificar medio → M4A",
-                  'Obtener detalles de nota de voz → "Nombre"',
-                  'Solicitud URL → POST → ' + uploadUrl,
-                ].map((step, i) => (
-                  <div key={i} className="flex items-start gap-2">
-                    <span className="text-[10px] text-indigo-400 font-mono mt-0.5">{i + 1}.</span>
-                    <span className="text-xs text-gray-700 font-mono">{step}</span>
-                  </div>
-                ))}
-              </div>
-
-              <ShortcutStep n={4}>
-                Para la acción <strong>Solicitud URL</strong>, configura el cuerpo como <strong>Formulario</strong> con dos campos:
-                <br /><br />
-                &bull; <strong>file</strong> → selecciona la variable <em>Medio codificado</em><br />
-                &bull; <strong>name</strong> → selecciona la variable <em>Nombre</em>
-              </ShortcutStep>
-
-              <ShortcutStep n={5}>
-                Guarda la automatización. A partir de ahora, cada vez que grabes una nota de voz y cierres la app, aparecerá aquí automáticamente transcrita.
-              </ShortcutStep>
+              <Step n={1} color="orange">
+                Ve a <strong>dash.cloudflare.com</strong> → sección <strong>R2</strong> → <strong>Create bucket</strong>.
+                Llámalo <code className="bg-white px-1 rounded">lauras-toolbox</code> y pulsa <strong>Create bucket</strong>.
+              </Step>
+              <Step n={2} color="orange">
+                Dentro del bucket ve a <strong>Settings → Public access</strong> y activa el acceso público.
+                Copia la URL que aparece (algo como <code className="bg-white px-1 rounded">pub-xxx.r2.dev</code>).
+              </Step>
+              <Step n={3} color="orange">
+                Vuelve a R2 (fuera del bucket) → <strong>Manage R2 API tokens</strong> → <strong>Create API token</strong>.
+                Permisos: <strong>Object Read &amp; Write</strong>. Guarda el <em>Access Key ID</em> y el <em>Secret Access Key</em>.
+              </Step>
+              <Step n={4} color="orange">
+                Tu Account ID está en la barra lateral derecha del dashboard de Cloudflare (bajo &ldquo;Account ID&rdquo;).
+              </Step>
+              <Step n={5} color="orange">
+                Añade estas variables en tu <code className="bg-white px-1 rounded">.env.local</code> y también en
+                Vercel → <strong>Settings → Environment Variables</strong>:
+              </Step>
+            </div>
+            <div className="flex flex-col gap-1.5 ml-8">
+              {[
+                "R2_ACCOUNT_ID=tu_account_id",
+                "R2_ACCESS_KEY_ID=tu_access_key",
+                "R2_SECRET_ACCESS_KEY=tu_secret_key",
+                "R2_BUCKET_NAME=lauras-toolbox",
+                "R2_PUBLIC_URL=https://pub-xxx.r2.dev",
+              ].map((v) => <CopyBox key={v} value={v} />)}
             </div>
           </div>
 
-          {/* URL + QR */}
+          {/* Part 2 — iOS Shortcut */}
+          <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-5 flex flex-col gap-4">
+            <div>
+              <p className="text-sm font-semibold text-indigo-900">Parte 2 — Atajo de iPhone (sincronización automática)</p>
+              <p className="text-xs text-indigo-600 mt-1">Cada vez que cierres Notas de Voz, la última grabación llegará aquí sola.</p>
+            </div>
+            <div className="flex flex-col gap-3.5">
+              <Step n={1} color="indigo">
+                Abre la app <strong>Atajos</strong> → pestaña <strong>Automatización</strong> → <strong>+</strong> → <strong>Nueva automatización</strong>.
+              </Step>
+              <Step n={2} color="indigo">
+                Busca <strong>App</strong> → elige <strong>Notas de Voz</strong> → activa <strong>Se cierra</strong> → desactiva &ldquo;Preguntar antes de ejecutar&rdquo; → <strong>Siguiente</strong>.
+              </Step>
+              <Step n={3} color="indigo">
+                Pulsa <strong>Nueva acción en blanco</strong> y añade estas 4 acciones en orden:
+                <div className="mt-2 flex flex-col gap-1.5 bg-white rounded-lg border border-indigo-100 p-3">
+                  {[
+                    "Obtener últimas notas de voz  →  Límite: 1",
+                    "Codificar medio  →  M4A",
+                    "Obtener detalles de nota de voz  →  Nombre",
+                    "Solicitud URL  →  Método: POST",
+                  ].map((s, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <span className="text-[10px] text-indigo-400 font-mono mt-0.5 shrink-0">{i + 1}.</span>
+                      <span className="text-xs text-gray-700">{s}</span>
+                    </div>
+                  ))}
+                </div>
+              </Step>
+              <Step n={4} color="indigo">
+                En <strong>Solicitud URL</strong> pega esta URL y configura el cuerpo como <strong>Formulario</strong>:
+                <CopyBox value={uploadUrl} />
+                <div className="mt-2 bg-white rounded-lg border border-indigo-100 p-3 flex flex-col gap-1.5">
+                  <p className="text-xs text-gray-600"><strong>file</strong> → variable <em>Medio codificado</em></p>
+                  <p className="text-xs text-gray-600"><strong>name</strong> → variable <em>Nombre</em></p>
+                </div>
+              </Step>
+              <Step n={5} color="indigo">
+                Guarda. Listo — graba una nota de voz, cierra la app y en unos segundos aparecerá aquí con la transcripción.
+              </Step>
+            </div>
+          </div>
+
+          {/* QR + test */}
           <div className="rounded-xl border border-gray-200 bg-white p-5 flex gap-5 items-center">
             {qrUrl && (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={qrUrl} alt="QR endpoint" width={90} height={90}
-                className="rounded-lg shrink-0 border border-gray-100" />
+              <img src={qrUrl} alt="QR" width={80} height={80} className="rounded-lg shrink-0 border border-gray-100" />
             )}
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-gray-700 mb-1">URL del endpoint</p>
-              <p className="text-xs text-gray-400 mb-2">Usa esta URL en el paso 4 de la configuración:</p>
-              <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2 border border-gray-200">
-                <code className="text-xs text-indigo-700 break-all flex-1">{uploadUrl}</code>
-                <button
-                  onClick={() => navigator.clipboard.writeText(uploadUrl)}
-                  className="shrink-0 text-xs text-gray-400 hover:text-gray-600"
-                >
-                  Copiar
-                </button>
-              </div>
+            <div className="flex-1">
+              <p className="text-xs font-semibold text-gray-700 mb-1">Probar la conexión</p>
+              <p className="text-xs text-gray-500 mb-3">Graba algo en Notas de Voz, cierra la app y recarga.</p>
+              <button onClick={load}
+                className="text-xs px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors">
+                Recargar grabaciones
+              </button>
             </div>
-          </div>
-
-          {/* Test */}
-          <div className="rounded-xl border border-gray-200 bg-white p-5">
-            <p className="text-xs font-semibold text-gray-700 mb-2">Probar la conexión</p>
-            <p className="text-xs text-gray-500 mb-3">
-              Graba cualquier cosa en Notas de Voz, cierra la app y vuelve aquí en unos segundos.
-              La grabación debería aparecer en la pestaña Grabaciones.
-            </p>
-            <button
-              onClick={load}
-              className="text-xs px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors"
-            >
-              Recargar grabaciones
-            </button>
           </div>
 
         </div>
