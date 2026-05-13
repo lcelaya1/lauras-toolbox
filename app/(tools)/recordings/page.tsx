@@ -100,7 +100,7 @@ function RecordingCard({ rec, onDelete }: { rec: RecordingMeta; onDelete: () => 
         <p className="text-xs text-red-400">No se pudo cargar el audio. El archivo puede haberse perdido.</p>
       ) : (
       <div className="flex items-center gap-3">
-        <audio ref={audioRef} src={rec.audioUrl} preload="metadata"
+        <audio ref={audioRef} src={`/api/recordings/${rec.id}/audio`} preload="metadata"
           onTimeUpdate={handleTimeUpdate}
           onEnded={() => { setPlaying(false); setProgress(0); setCurrentTime(0); }}
           onError={() => setAudioError(true)} />
