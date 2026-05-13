@@ -1,10 +1,11 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { saveRecording } from "@/lib/recordings-db";
 
 type Status = "idle" | "recording" | "finalizing" | "transcribing" | "done" | "error";
 
-const CHUNK_MS = 30_000; // send a chunk every 30 seconds
+const CHUNK_MS = 30_000;
 
 export default function AudioPage() {
   const [mode, setMode] = useState<"record" | "upload">("record");
@@ -14,20 +15,22 @@ export default function AudioPage() {
   const [copied, setCopied] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [chunkProcessing, setChunkProcessing] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Chunk tracking
-  const headerBlobRef = useRef<Blob | null>(null);  // first chunk has WebM headers
+  const headerBlobRef = useRef<Blob | null>(null);
   const isFirstChunkRef = useRef(true);
-  const accumulatedRef = useRef("");                 // growing transcript text
-  const pendingRef = useRef(0);                      // in-flight API calls
-  const stoppedRef = useRef(false);                  // recorder stopped?
+  const accumulatedRef = useRef("");
+  const pendingRef = useRef(0);
+  const stoppedRef = useRef(false);
+  const allChunksRef = useRef<Blob[]>([]);   // for saving the full audio
+  const recordingStartRef = useRef<number>(0);
+  const currentFileRef = useRef<{ blob: Blob; name: string; mimeType: string } | null>(null);
 
   const busy = status === "recording" || status === "finalizing" || status === "transcribing";
 
-  // ── Chunk transcription (fires every 30 s while recording) ──────────────
   async function sendChunk(blob: Blob) {
     pendingRef.current++;
     setChunkProcessing(true);
@@ -50,15 +53,18 @@ export default function AudioPage() {
     }
   }
 
-  // ── Start recording ──────────────────────────────────────────────────────
   async function startRecording() {
     setErrorMsg("");
     setTranscript("");
+    setSaved(false);
     accumulatedRef.current = "";
     headerBlobRef.current = null;
+    allChunksRef.current = [];
     isFirstChunkRef.current = true;
     stoppedRef.current = false;
     pendingRef.current = 0;
+    currentFileRef.current = null;
+    recordingStartRef.current = Date.now();
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -66,13 +72,12 @@ export default function AudioPage() {
 
       recorder.ondataavailable = (e) => {
         if (e.data.size === 0) return;
+        allChunksRef.current.push(e.data);
         if (isFirstChunkRef.current) {
-          // First blob contains the WebM init segment — save it and transcribe
           headerBlobRef.current = e.data;
           isFirstChunkRef.current = false;
           sendChunk(e.data);
         } else {
-          // Prepend the header so Whisper gets a valid WebM file
           const combined = new Blob([headerBlobRef.current!, e.data], { type: "audio/webm" });
           sendChunk(combined);
         }
@@ -80,13 +85,18 @@ export default function AudioPage() {
 
       recorder.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
+        const durationMs = Date.now() - recordingStartRef.current;
+        const fullBlob = new Blob(allChunksRef.current, { type: "audio/webm" });
+        currentFileRef.current = {
+          blob: fullBlob,
+          name: `Grabación ${new Date().toLocaleString("es-ES")}`,
+          mimeType: "audio/webm",
+        };
+        // store duration on the ref for saving later
+        (currentFileRef.current as any).durationMs = durationMs;
         stoppedRef.current = true;
-        // If there are still in-flight chunks, wait for them
-        if (pendingRef.current === 0) {
-          setStatus("done");
-        } else {
-          setStatus("finalizing");
-        }
+        if (pendingRef.current === 0) setStatus("done");
+        else setStatus("finalizing");
       };
 
       recorder.start(CHUNK_MS);
@@ -102,11 +112,12 @@ export default function AudioPage() {
     mediaRecorderRef.current?.stop();
   }
 
-  // ── File upload (single shot) ────────────────────────────────────────────
   async function transcribeFile(file: File) {
     setStatus("transcribing");
     setTranscript("");
+    setSaved(false);
     setErrorMsg("");
+    currentFileRef.current = { blob: file, name: file.name, mimeType: file.type };
     const form = new FormData();
     form.append("file", file, file.name);
     try {
@@ -142,11 +153,25 @@ export default function AudioPage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
+  async function handleSave() {
+    const f = currentFileRef.current;
+    if (!f) return;
+    await saveRecording({
+      id: crypto.randomUUID(),
+      name: f.name,
+      date: new Date().toISOString(),
+      audioBlob: f.blob,
+      mimeType: f.mimeType,
+      transcript,
+      durationMs: (f as any).durationMs,
+    });
+    setSaved(true);
+  }
+
   const showLive = status === "recording" || status === "finalizing";
 
   return (
     <div className="px-8 py-10 max-w-2xl">
-      {/* Header */}
       <div className="mb-8">
         <div className="flex items-center gap-2 mb-1">
           <span className="text-xl">🎙</span>
@@ -197,7 +222,6 @@ export default function AudioPage() {
                 )}
               </button>
 
-              {/* Status line below button */}
               {status === "idle" && (
                 <p className="text-xs text-gray-400">Pulsa para comenzar a grabar</p>
               )}
@@ -279,7 +303,7 @@ export default function AudioPage() {
           </div>
         )}
 
-        {/* Live transcript (while recording / finalizing) */}
+        {/* Live transcript */}
         {showLive && (
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
@@ -313,11 +337,23 @@ export default function AudioPage() {
               <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Transcripción
               </span>
-              <button onClick={copy}
-                className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200
-                  transition-colors text-gray-700 font-medium">
-                {copied ? "✓ Copiado" : "Copiar"}
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={copy}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200
+                    transition-colors text-gray-700 font-medium">
+                  {copied ? "✓ Copiado" : "Copiar"}
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saved}
+                  className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors
+                    ${saved
+                      ? "bg-green-100 text-green-700 cursor-default"
+                      : "bg-indigo-600 hover:bg-indigo-500 text-white"}`}
+                >
+                  {saved ? "✓ Guardada" : "Guardar grabación"}
+                </button>
+              </div>
             </div>
             <textarea
               readOnly
@@ -327,7 +363,7 @@ export default function AudioPage() {
                 text-sm text-gray-800 resize-y focus:outline-none focus:ring-2
                 focus:ring-indigo-400 leading-relaxed"
             />
-            <button onClick={() => { setStatus("idle"); setTranscript(""); }}
+            <button onClick={() => { setStatus("idle"); setTranscript(""); setSaved(false); }}
               className="self-start text-xs text-gray-400 hover:text-gray-600 transition-colors mt-1">
               ← Nueva transcripción
             </button>

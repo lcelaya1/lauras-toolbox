@@ -8,6 +8,13 @@ const tools = [
     description: "Graba o sube un archivo de audio y obtén la transcripción en español al instante con Groq Whisper.",
     tag: "IA · Whisper",
   },
+  {
+    href: "/recordings",
+    emoji: "📼",
+    title: "Mis grabaciones",
+    description: "Biblioteca de grabaciones guardadas con su transcripción. Accede, reproduce y copia desde un solo lugar.",
+    tag: "Biblioteca",
+  },
 ];
 
 export default function Home() {
