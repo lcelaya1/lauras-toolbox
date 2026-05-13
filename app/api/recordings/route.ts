@@ -17,8 +17,14 @@ export async function POST(req: NextRequest) {
 
   if (contentType.includes("application/json")) {
     // iOS Shortcut sends base64-encoded audio as JSON
-    const body = await req.json();
-    const b64: string = body.audioBase64 ?? "";
+    let body: Record<string, string>;
+    try {
+      const raw = await req.text();
+      body = JSON.parse(raw.replace(/[\r\n]/g, ""));
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    }
+    const b64: string = (body.audioBase64 ?? "").replace(/\s/g, "");
     const mimeType: string = body.mimeType ?? "audio/mp4";
     name = body.name ?? "Nota de voz";
     if (b64) {
