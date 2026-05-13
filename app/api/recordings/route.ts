@@ -12,6 +12,7 @@ export async function POST(req: NextRequest) {
   const name = (formData.get("name") as string | null) ?? file?.name ?? "Grabación";
   const providedTranscript = formData.get("transcript") as string | null;
   const autoTranscribe = formData.get("transcribe") === "true" || !providedTranscript;
+  const durationMs = formData.get("durationMs") ? Number(formData.get("durationMs")) : undefined;
 
   if (!file) {
     return NextResponse.json({ error: "No file provided" }, { status: 400 });
@@ -47,6 +48,7 @@ export async function POST(req: NextRequest) {
       transcript,
       audioUrl: "",       // filled by addRecording
       mimeType: file.type || "audio/webm",
+      durationMs,
     },
     file,
   );

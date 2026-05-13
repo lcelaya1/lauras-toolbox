@@ -22,6 +22,7 @@ function RecordingCard({ rec, onDelete }: { rec: RecordingMeta; onDelete: () => 
   const [currentTime, setCurrentTime] = useState(0);
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [audioError, setAudioError] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   async function copy() {
@@ -36,11 +37,20 @@ function RecordingCard({ rec, onDelete }: { rec: RecordingMeta; onDelete: () => 
     onDelete();
   }
 
-  function togglePlay() {
+  async function togglePlay() {
     const a = audioRef.current;
     if (!a) return;
-    if (playing) { a.pause(); setPlaying(false); }
-    else { a.play(); setPlaying(true); }
+    if (playing) {
+      a.pause();
+      setPlaying(false);
+    } else {
+      try {
+        await a.play();
+        setPlaying(true);
+      } catch {
+        setAudioError(true);
+      }
+    }
   }
 
   function handleTimeUpdate() {
@@ -86,10 +96,14 @@ function RecordingCard({ rec, onDelete }: { rec: RecordingMeta; onDelete: () => 
       </div>
 
       {/* Custom audio player */}
+      {audioError ? (
+        <p className="text-xs text-red-400">No se pudo cargar el audio. El archivo puede haberse perdido.</p>
+      ) : (
       <div className="flex items-center gap-3">
-        <audio ref={audioRef} src={rec.audioUrl}
+        <audio ref={audioRef} src={rec.audioUrl} preload="metadata"
           onTimeUpdate={handleTimeUpdate}
-          onEnded={() => { setPlaying(false); setProgress(0); setCurrentTime(0); }} />
+          onEnded={() => { setPlaying(false); setProgress(0); setCurrentTime(0); }}
+          onError={() => setAudioError(true)} />
 
         <button onClick={togglePlay}
           className="flex items-center justify-center w-9 h-9 rounded-full bg-indigo-600
@@ -116,6 +130,7 @@ function RecordingCard({ rec, onDelete }: { rec: RecordingMeta; onDelete: () => 
           </div>
         </div>
       </div>
+      )}
 
       {rec.transcript && (
         <div className="flex flex-col gap-1.5">
