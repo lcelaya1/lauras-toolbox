@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { saveRecording } from "@/lib/recordings-db";
 
 type Status = "idle" | "recording" | "finalizing" | "transcribing" | "done" | "error";
 
@@ -156,15 +155,12 @@ export default function AudioPage() {
   async function handleSave() {
     const f = currentFileRef.current;
     if (!f) return;
-    await saveRecording({
-      id: crypto.randomUUID(),
-      name: f.name,
-      date: new Date().toISOString(),
-      audioBlob: f.blob,
-      mimeType: f.mimeType,
-      transcript,
-      durationMs: (f as any).durationMs,
-    });
+    const form = new FormData();
+    form.append("file", f.blob, f.name);
+    form.append("name", f.name);
+    form.append("transcript", transcript);
+    if ((f as any).durationMs) form.append("durationMs", String((f as any).durationMs));
+    await fetch("/api/recordings", { method: "POST", body: form });
     setSaved(true);
   }
 
