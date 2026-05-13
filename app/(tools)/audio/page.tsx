@@ -1,10 +1,12 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Status = "idle" | "recording" | "finalizing" | "transcribing" | "done" | "error";
 
 const CHUNK_MS = 30_000;
+const BARS = 55;
+const SAMPLE_MS = 80;
 
 export default function AudioPage() {
   const [mode, setMode] = useState<"record" | "upload">("record");
@@ -18,18 +20,85 @@ export default function AudioPage() {
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const headerBlobRef = useRef<Blob | null>(null);
   const isFirstChunkRef = useRef(true);
   const accumulatedRef = useRef("");
   const pendingRef = useRef(0);
   const stoppedRef = useRef(false);
-  const allChunksRef = useRef<Blob[]>([]);   // for saving the full audio
+  const allChunksRef = useRef<Blob[]>([]);
   const recordingStartRef = useRef<number>(0);
   const currentFileRef = useRef<{ blob: Blob; name: string; mimeType: string } | null>(null);
 
+  // Waveform
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const animFrameRef = useRef<number>(0);
+  const barsRef = useRef<number[]>([]);
+  const lastSampleRef = useRef<number>(0);
+
   const busy = status === "recording" || status === "finalizing" || status === "transcribing";
 
+  // ── Waveform draw loop ───────────────────────────────────────────────────
+  function drawWaveform() {
+    const canvas = canvasRef.current;
+    const analyser = analyserRef.current;
+    if (!canvas || !analyser) return;
+
+    const now = Date.now();
+    if (now - lastSampleRef.current >= SAMPLE_MS) {
+      const buf = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) {
+        const n = (buf[i] / 128) - 1;
+        sum += n * n;
+      }
+      const rms = Math.sqrt(sum / buf.length);
+      barsRef.current = [...barsRef.current.slice(-(BARS - 1)), rms];
+      lastSampleRef.current = now;
+    }
+
+    const ctx = canvas.getContext("2d")!;
+    const { width, height } = canvas;
+    ctx.clearRect(0, 0, width, height);
+
+    const gap = 3;
+    const barW = (width - (BARS - 1) * gap) / BARS;
+    const cy = height / 2;
+    const filled = barsRef.current;
+
+    for (let i = 0; i < BARS; i++) {
+      const x = i * (barW + gap);
+      if (i >= filled.length) {
+        ctx.fillStyle = "#e5e7eb";
+        ctx.beginPath();
+        ctx.roundRect(x, cy - 2, barW, 4, 2);
+        ctx.fill();
+      } else {
+        const rms = filled[i];
+        const bh = Math.max(4, Math.min(rms * height * 4, height - 4));
+        const isLast = i === filled.length - 1;
+        ctx.fillStyle = isLast ? "#4f46e5" : "#a5b4fc";
+        ctx.beginPath();
+        ctx.roundRect(x, cy - bh / 2, barW, bh, 2);
+        ctx.fill();
+      }
+    }
+
+    animFrameRef.current = requestAnimationFrame(drawWaveform);
+  }
+
+  function stopWaveform() {
+    cancelAnimationFrame(animFrameRef.current);
+    audioCtxRef.current?.close();
+    analyserRef.current = null;
+    audioCtxRef.current = null;
+    barsRef.current = [];
+  }
+
+  // ── Chunk transcription ─────────────────────────────────────────────────
   async function sendChunk(blob: Blob) {
     pendingRef.current++;
     setChunkProcessing(true);
@@ -43,15 +112,14 @@ export default function AudioPage() {
         accumulatedRef.current += (accumulatedRef.current ? " " : "") + piece;
         setTranscript(accumulatedRef.current);
       }
-    } catch {
-      // silent — keep recording even if one chunk fails
-    } finally {
+    } catch { /* silent */ } finally {
       pendingRef.current--;
       if (pendingRef.current === 0) setChunkProcessing(false);
       if (stoppedRef.current && pendingRef.current === 0) setStatus("done");
     }
   }
 
+  // ── Start recording ──────────────────────────────────────────────────────
   async function startRecording() {
     setErrorMsg("");
     setTranscript("");
@@ -67,6 +135,19 @@ export default function AudioPage() {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // Set up waveform analyser
+      const audioCtx = new AudioContext();
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+      audioCtxRef.current = audioCtx;
+      barsRef.current = [];
+      lastSampleRef.current = 0;
+      animFrameRef.current = requestAnimationFrame(drawWaveform);
+
       const recorder = new MediaRecorder(stream);
 
       recorder.ondataavailable = (e) => {
@@ -77,22 +158,19 @@ export default function AudioPage() {
           isFirstChunkRef.current = false;
           sendChunk(e.data);
         } else {
-          const combined = new Blob([headerBlobRef.current!, e.data], { type: "audio/webm" });
-          sendChunk(combined);
+          sendChunk(new Blob([headerBlobRef.current!, e.data], { type: "audio/webm" }));
         }
       };
 
       recorder.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
+        stopWaveform();
         const durationMs = Date.now() - recordingStartRef.current;
         const fullBlob = new Blob(allChunksRef.current, { type: "audio/webm" });
-        currentFileRef.current = {
-          blob: fullBlob,
-          name: `Grabación ${new Date().toLocaleString("es-ES")}`,
-          mimeType: "audio/webm",
-        };
-        // store duration on the ref for saving later
-        (currentFileRef.current as any).durationMs = durationMs;
+        currentFileRef.current = Object.assign(
+          { blob: fullBlob, name: `Grabación ${new Date().toLocaleString("es-ES")}`, mimeType: "audio/webm" },
+          { durationMs },
+        );
         stoppedRef.current = true;
         if (pendingRef.current === 0) setStatus("done");
         else setStatus("finalizing");
@@ -111,6 +189,7 @@ export default function AudioPage() {
     mediaRecorderRef.current?.stop();
   }
 
+  // ── File upload ──────────────────────────────────────────────────────────
   async function transcribeFile(file: File) {
     setStatus("transcribing");
     setTranscript("");
@@ -164,6 +243,18 @@ export default function AudioPage() {
     setSaved(true);
   }
 
+  // Resize canvas on mount
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ro = new ResizeObserver(() => {
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+    });
+    ro.observe(canvas);
+    return () => ro.disconnect();
+  }, []);
+
   const showLive = status === "recording" || status === "finalizing";
 
   return (
@@ -181,32 +272,29 @@ export default function AudioPage() {
         {/* Mode tabs */}
         <div className="flex rounded-lg bg-gray-100 p-1 gap-1">
           {(["record", "upload"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => { if (!busy) setMode(m); }}
-              disabled={busy}
+            <button key={m} onClick={() => { if (!busy) setMode(m); }} disabled={busy}
               className={`flex-1 py-1.5 rounded-md text-sm font-medium transition-colors
-                ${mode === m
-                  ? "bg-white text-gray-900 shadow-sm"
-                  : "text-gray-500 hover:text-gray-700 disabled:opacity-40"}`}
-            >
+                ${mode === m ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700 disabled:opacity-40"}`}>
               {m === "record" ? "Grabar" : "Subir archivo"}
             </button>
           ))}
         </div>
 
         {/* Action */}
-        <div className="flex flex-col items-center gap-3">
+        <div className="flex flex-col items-center gap-4">
           {mode === "record" ? (
             <>
+              {/* Waveform canvas — shown while recording */}
+              <div className={`w-full transition-all duration-300 overflow-hidden ${status === "recording" ? "h-16 opacity-100" : "h-0 opacity-0"}`}>
+                <canvas ref={canvasRef} className="w-full h-full" />
+              </div>
+
               <button
                 onClick={status === "recording" ? stopRecording : startRecording}
                 disabled={status === "finalizing" || status === "transcribing"}
                 className={`w-20 h-20 rounded-full flex items-center justify-center text-white
                   shadow-md transition-all active:scale-95 disabled:opacity-40
-                  ${status === "recording"
-                    ? "bg-red-500 hover:bg-red-400"
-                    : "bg-indigo-600 hover:bg-indigo-500"}`}
+                  ${status === "recording" ? "bg-red-500 hover:bg-red-400" : "bg-indigo-600 hover:bg-indigo-500"}`}
               >
                 {status === "recording" ? (
                   <span className="w-6 h-6 rounded bg-white" />
@@ -218,9 +306,7 @@ export default function AudioPage() {
                 )}
               </button>
 
-              {status === "idle" && (
-                <p className="text-xs text-gray-400">Pulsa para comenzar a grabar</p>
-              )}
+              {status === "idle" && <p className="text-xs text-gray-400">Pulsa para comenzar a grabar</p>}
               {status === "recording" && (
                 <div className="flex items-center gap-2 text-xs">
                   <span className="flex items-center gap-1.5 text-red-500 font-medium">
@@ -266,19 +352,13 @@ export default function AudioPage() {
                     d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
                 </svg>
                 <div className="text-center">
-                  <p className="text-sm font-medium text-gray-700">
-                    {dragging ? "Suelta aquí" : "Arrastra un archivo o haz clic"}
-                  </p>
+                  <p className="text-sm font-medium text-gray-700">{dragging ? "Suelta aquí" : "Arrastra un archivo o haz clic"}</p>
                   <p className="text-xs text-gray-400 mt-0.5">m4a · mp3 · wav · ogg · webm</p>
                 </div>
               </div>
-              <input
-                ref={fileInputRef}
-                type="file"
+              <input ref={fileInputRef} type="file"
                 accept="audio/mp4,audio/mpeg,audio/wav,audio/ogg,audio/webm,.m4a,.mp3,.wav,.ogg,.webm"
-                className="hidden"
-                onChange={handleFileChange}
-              />
+                className="hidden" onChange={handleFileChange} />
               {status === "transcribing" && (
                 <span className="flex items-center gap-1.5 text-xs text-gray-500">
                   <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
@@ -294,35 +374,22 @@ export default function AudioPage() {
 
         {/* Error */}
         {status === "error" && (
-          <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">
-            {errorMsg}
-          </div>
+          <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">{errorMsg}</div>
         )}
 
         {/* Live transcript */}
         {showLive && (
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Transcripción en vivo
-              </span>
+              <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Transcripción en vivo</span>
               {transcript && (
-                <button onClick={copy}
-                  className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200
-                    transition-colors text-gray-700 font-medium">
+                <button onClick={copy} className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors text-gray-700 font-medium">
                   {copied ? "✓ Copiado" : "Copiar"}
                 </button>
               )}
             </div>
-            <textarea
-              readOnly
-              value={transcript || ""}
-              rows={8}
-              placeholder="El texto aparecerá aquí cada ~30 segundos…"
-              className="w-full rounded-lg bg-gray-50 border border-gray-200 px-4 py-3
-                text-sm text-gray-800 resize-y focus:outline-none leading-relaxed
-                placeholder:text-gray-300"
-            />
+            <textarea readOnly value={transcript || ""} rows={8} placeholder="El texto aparecerá aquí cada ~30 segundos…"
+              className="w-full rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-800 resize-y focus:outline-none leading-relaxed placeholder:text-gray-300" />
           </div>
         )}
 
@@ -330,42 +397,26 @@ export default function AudioPage() {
         {status === "done" && (
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Transcripción
-              </span>
+              <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Transcripción</span>
               <div className="flex items-center gap-2">
-                <button onClick={copy}
-                  className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200
-                    transition-colors text-gray-700 font-medium">
+                <button onClick={copy} className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors text-gray-700 font-medium">
                   {copied ? "✓ Copiado" : "Copiar"}
                 </button>
-                <button
-                  onClick={handleSave}
-                  disabled={saved}
+                <button onClick={handleSave} disabled={saved}
                   className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors
-                    ${saved
-                      ? "bg-green-100 text-green-700 cursor-default"
-                      : "bg-indigo-600 hover:bg-indigo-500 text-white"}`}
-                >
+                    ${saved ? "bg-green-100 text-green-700 cursor-default" : "bg-indigo-600 hover:bg-indigo-500 text-white"}`}>
                   {saved ? "✓ Guardada" : "Guardar grabación"}
                 </button>
               </div>
             </div>
-            <textarea
-              readOnly
-              value={transcript}
-              rows={10}
-              className="w-full rounded-lg bg-gray-50 border border-gray-200 px-4 py-3
-                text-sm text-gray-800 resize-y focus:outline-none focus:ring-2
-                focus:ring-indigo-400 leading-relaxed"
-            />
+            <textarea readOnly value={transcript} rows={10}
+              className="w-full rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-800 resize-y focus:outline-none focus:ring-2 focus:ring-indigo-400 leading-relaxed" />
             <button onClick={() => { setStatus("idle"); setTranscript(""); setSaved(false); }}
               className="self-start text-xs text-gray-400 hover:text-gray-600 transition-colors mt-1">
               ← Nueva transcripción
             </button>
           </div>
         )}
-
       </div>
     </div>
   );

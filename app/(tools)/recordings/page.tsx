@@ -18,6 +18,8 @@ function formatDuration(ms?: number) {
 
 function RecordingCard({ rec, onDelete }: { rec: RecordingMeta; onDelete: () => void }) {
   const [playing, setPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -41,6 +43,29 @@ function RecordingCard({ rec, onDelete }: { rec: RecordingMeta; onDelete: () => 
     else { a.play(); setPlaying(true); }
   }
 
+  function handleTimeUpdate() {
+    const a = audioRef.current;
+    if (!a) return;
+    setCurrentTime(a.currentTime);
+    const dur = rec.durationMs ? rec.durationMs / 1000 : a.duration;
+    if (dur && isFinite(dur)) setProgress(a.currentTime / dur);
+  }
+
+  function handleSeek(e: React.MouseEvent<HTMLDivElement>) {
+    const a = audioRef.current;
+    if (!a) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = (e.clientX - rect.left) / rect.width;
+    const dur = rec.durationMs ? rec.durationMs / 1000 : a.duration;
+    if (dur && isFinite(dur)) {
+      a.currentTime = ratio * dur;
+      setProgress(ratio);
+    }
+  }
+
+  const durSec = rec.durationMs ? rec.durationMs / 1000 : null;
+  const fmtTime = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5 flex flex-col gap-4">
       <div className="flex items-start justify-between gap-3">
@@ -53,22 +78,22 @@ function RecordingCard({ rec, onDelete }: { rec: RecordingMeta; onDelete: () => 
             )}
           </p>
         </div>
-        <button
-          onClick={handleDelete}
+        <button onClick={handleDelete}
           className={`shrink-0 text-xs px-2.5 py-1 rounded-lg transition-colors font-medium
-            ${confirming ? "bg-red-100 text-red-600 hover:bg-red-200" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}
-        >
+            ${confirming ? "bg-red-100 text-red-600 hover:bg-red-200" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>
           {confirming ? "¿Segura?" : "Eliminar"}
         </button>
       </div>
 
-      {/* Audio player */}
+      {/* Custom audio player */}
       <div className="flex items-center gap-3">
-        <button
-          onClick={togglePlay}
+        <audio ref={audioRef} src={rec.audioUrl}
+          onTimeUpdate={handleTimeUpdate}
+          onEnded={() => { setPlaying(false); setProgress(0); setCurrentTime(0); }} />
+
+        <button onClick={togglePlay}
           className="flex items-center justify-center w-9 h-9 rounded-full bg-indigo-600
-            hover:bg-indigo-500 text-white shrink-0 transition-colors"
-        >
+            hover:bg-indigo-500 text-white shrink-0 transition-colors">
           {playing ? (
             <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
               <path fillRule="evenodd" d="M6 4a1 1 0 00-1 1v10a1 1 0 002 0V5a1 1 0 00-1-1zm8 0a1 1 0 00-1 1v10a1 1 0 002 0V5a1 1 0 00-1-1z" />
@@ -79,14 +104,17 @@ function RecordingCard({ rec, onDelete }: { rec: RecordingMeta; onDelete: () => 
             </svg>
           )}
         </button>
-        <audio
-          ref={audioRef}
-          src={rec.audioUrl}
-          onEnded={() => setPlaying(false)}
-          controls
-          className="flex-1"
-          style={{ height: 32 }}
-        />
+
+        <div className="flex-1 flex flex-col gap-1.5">
+          <div className="relative h-1.5 bg-gray-200 rounded-full cursor-pointer" onClick={handleSeek}>
+            <div className="absolute inset-y-0 left-0 bg-indigo-500 rounded-full transition-all"
+              style={{ width: `${progress * 100}%` }} />
+          </div>
+          <div className="flex justify-between text-[10px] text-gray-400">
+            <span>{fmtTime(currentTime)}</span>
+            <span>{durSec ? fmtTime(durSec) : "—"}</span>
+          </div>
+        </div>
       </div>
 
       {rec.transcript && (
