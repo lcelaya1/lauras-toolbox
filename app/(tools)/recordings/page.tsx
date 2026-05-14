@@ -110,6 +110,7 @@ export default function RecordingsPage() {
   const [showTranscript, setShowTranscript] = useState(true);
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [transcribing, setTranscribing] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -130,6 +131,28 @@ export default function RecordingsPage() {
     setConfirming(null);
     if (selectedId === id) setSelectedId(null);
     await load();
+  }
+
+  async function handleTranscribe(id: string) {
+    setTranscribing(id);
+    try {
+      const audioRes = await fetch(`/api/recordings/${id}/audio`);
+      const blob = await audioRes.blob();
+      const form = new FormData();
+      form.append("file", blob, "audio.m4a");
+      const res = await fetch("/api/transcribe", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      await fetch(`/api/recordings/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript: data.text }),
+      });
+      setRecordings((prev) =>
+        prev.map((r) => r.id === id ? { ...r, transcript: data.text } : r)
+      );
+    } catch { /* silent */ }
+    setTranscribing(null);
   }
 
   async function copy(text: string) {
@@ -246,8 +269,24 @@ export default function RecordingsPage() {
                 </div>
               )}
               {!selected.transcript && (
-                <div className="flex flex-col items-center justify-center py-10 text-center gap-2">
+                <div className="flex flex-col items-center justify-center py-10 text-center gap-3">
                   <p className="text-sm text-gray-400">Esta grabación no tiene transcripción.</p>
+                  <button
+                    onClick={() => handleTranscribe(selected.id)}
+                    disabled={transcribing === selected.id}
+                    className="flex items-center gap-2 text-sm px-5 py-2.5 rounded-xl bg-indigo-600
+                      hover:bg-indigo-500 disabled:opacity-60 text-white font-medium transition-colors"
+                  >
+                    {transcribing === selected.id ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                        </svg>
+                        Transcribiendo…
+                      </>
+                    ) : "Transcribir ahora"}
+                  </button>
                 </div>
               )}
             </div>

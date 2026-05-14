@@ -83,6 +83,11 @@ export async function addRecording(
   return withUrl;
 }
 
+export async function updateRecordingTranscript(id: string, transcript: string): Promise<void> {
+  const index = await readIndex();
+  await writeIndex(index.map((r) => r.id === id ? { ...r, transcript } : r));
+}
+
 export async function removeRecording(id: string): Promise<void> {
   const index = await readIndex();
   const rec = index.find((r) => r.id === id);
