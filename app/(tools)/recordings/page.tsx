@@ -21,14 +21,14 @@ function formatDuration(ms?: number) {
 // ─── Upload panel ────────────────────────────────────────────────────────────
 
 interface UploadedFile {
-  id: string;
+  id: string;        // local UI id
+  recId: string | null; // id in the recordings index (set after registration)
   name: string;
   file: File;
   wantsTranscript: boolean;
-  status: "idle" | "transcribing" | "done" | "error";
+  status: "idle" | "uploading" | "transcribing" | "done" | "error";
   transcript: string;
   error: string;
-  saved: boolean;
 }
 
 function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
@@ -51,17 +51,74 @@ function UploadPanel({ onSaved }: { onSaved: () => void }) {
   const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  async function transcribeFile(id: string, file: File) {
-    setFiles((prev) => prev.map((f) => f.id === id ? { ...f, status: "transcribing" } : f));
-    const form = new FormData();
-    form.append("file", file, file.name);
+  function upd(id: string, patch: Partial<UploadedFile>) {
+    setFiles((prev) => prev.map((f) => f.id === id ? { ...f, ...patch } : f));
+  }
+
+  async function processFile(uf: UploadedFile) {
+    const mimeType = uf.file.type || "audio/mp4";
+
+    // 1. Get presigned upload URL
+    upd(uf.id, { status: "uploading" });
+    let recId: string;
+    let uploadUrl: string;
+    let ext: string;
     try {
-      const res = await fetch("/api/transcribe", { method: "POST", body: form });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Error en la transcripción");
-      setFiles((prev) => prev.map((f) => f.id === id ? { ...f, status: "done", transcript: data.text } : f));
+      const res = await fetch("/api/recordings/presign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mimeType }),
+      });
+      if (!res.ok) throw new Error("No se pudo obtener la URL de subida");
+      ({ id: recId, uploadUrl, ext } = await res.json());
     } catch (err) {
-      setFiles((prev) => prev.map((f) => f.id === id ? { ...f, status: "error", error: err instanceof Error ? err.message : "Error" } : f));
+      upd(uf.id, { status: "error", error: err instanceof Error ? err.message : "Error al preparar" });
+      return;
+    }
+
+    // 2. Upload directly to R2 (no server body-size limit)
+    try {
+      const putRes = await fetch(uploadUrl, {
+        method: "PUT",
+        body: uf.file,
+        headers: { "Content-Type": mimeType },
+      });
+      if (!putRes.ok) throw new Error(`Error al subir (${putRes.status})`);
+    } catch (err) {
+      upd(uf.id, { status: "error", error: err instanceof Error ? err.message : "Error al subir" });
+      return;
+    }
+
+    // 3. Register metadata in the recordings index
+    try {
+      const regRes = await fetch("/api/recordings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ preUploaded: "true", id: recId, name: uf.name, mimeType, ext }),
+      });
+      if (!regRes.ok) throw new Error("Error al registrar la grabación");
+    } catch (err) {
+      upd(uf.id, { status: "error", error: err instanceof Error ? err.message : "Error al guardar" });
+      return;
+    }
+
+    upd(uf.id, { recId });
+    onSaved(); // recording now visible in left panel
+
+    // 4. Transcribe server-side (fetches from R2, no client re-upload)
+    if (uf.wantsTranscript) {
+      upd(uf.id, { status: "transcribing" });
+      try {
+        const tRes = await fetch(`/api/recordings/${recId}/transcribe`, { method: "POST" });
+        const tData = await tRes.json();
+        if (!tRes.ok) throw new Error(tData.error ?? "Error en la transcripción");
+        upd(uf.id, { status: "done", transcript: tData.transcript });
+        onSaved(); // refresh list with transcript
+      } catch (err) {
+        upd(uf.id, { status: "error", error: err instanceof Error ? err.message : "Error al transcribir" });
+      }
+    } else {
+      upd(uf.id, { status: "done" });
     }
   }
 
@@ -69,36 +126,17 @@ function UploadPanel({ onSaved }: { onSaved: () => void }) {
     const arr = Array.from(incoming);
     const added: UploadedFile[] = arr.map((file) => ({
       id: crypto.randomUUID(),
+      recId: null,
       name: file.name.replace(/\.[^.]+$/, ""),
       file,
       wantsTranscript: true,
       status: "idle" as const,
       transcript: "",
       error: "",
-      saved: false,
     }));
     setFiles((prev) => [...prev, ...added]);
     if (added.length > 0 && !selectedId) setSelectedId(added[0].id);
-    added.forEach((f) => { if (f.wantsTranscript) transcribeFile(f.id, f.file); });
-  }
-
-  function toggleTranscript(id: string) {
-    setFiles((prev) => prev.map((f) => {
-      if (f.id !== id) return f;
-      const next = !f.wantsTranscript;
-      if (next && f.status === "idle") transcribeFile(id, f.file);
-      return { ...f, wantsTranscript: next };
-    }));
-  }
-
-  async function handleSave(af: UploadedFile) {
-    const form = new FormData();
-    form.append("file", af.file, af.name);
-    form.append("name", af.name);
-    form.append("transcript", af.transcript);
-    await fetch("/api/recordings", { method: "POST", body: form });
-    setFiles((prev) => prev.map((f) => f.id === af.id ? { ...f, saved: true } : f));
-    onSaved();
+    added.forEach((f) => processFile(f));
   }
 
   async function copy(text: string) {
@@ -164,26 +202,11 @@ function UploadPanel({ onSaved }: { onSaved: () => void }) {
               >
                 + Añadir
               </button>
-              {selected && (
-                <>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-500">Transcribir</span>
-                    <Toggle on={selected.wantsTranscript} onChange={() => toggleTranscript(selected.id)} />
-                  </div>
-                  {selected.status === "done" && selected.transcript && (
-                    <>
-                      <button onClick={() => copy(selected.transcript)}
-                        className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors text-gray-600 font-medium">
-                        {copied ? "✓ Copiado" : "Copiar"}
-                      </button>
-                      <button onClick={() => handleSave(selected)} disabled={selected.saved}
-                        className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors
-                          ${selected.saved ? "bg-green-100 text-green-700 cursor-default" : "bg-indigo-600 hover:bg-indigo-500 text-white"}`}>
-                        {selected.saved ? "✓ Guardada" : "Guardar"}
-                      </button>
-                    </>
-                  )}
-                </>
+              {selected && selected.status === "done" && selected.transcript && (
+                <button onClick={() => copy(selected.transcript)}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors text-gray-600 font-medium">
+                  {copied ? "✓ Copiado" : "Copiar"}
+                </button>
               )}
             </div>
           </div>
@@ -199,10 +222,11 @@ function UploadPanel({ onSaved }: { onSaved: () => void }) {
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-gray-800 truncate">{f.name}</p>
                       <p className="text-[10px] mt-0.5">
+                        {f.status === "uploading" && <span className="text-indigo-400">Subiendo…</span>}
                         {f.status === "transcribing" && <span className="text-indigo-400">Transcribiendo…</span>}
                         {f.status === "done" && <span className="text-green-500">✓ Listo</span>}
                         {f.status === "error" && <span className="text-red-400">Error</span>}
-                        {f.status === "idle" && <span className="text-gray-400">Sin transcribir</span>}
+                        {f.status === "idle" && <span className="text-gray-400">Esperando…</span>}
                       </p>
                     </div>
                   </button>
@@ -213,13 +237,13 @@ function UploadPanel({ onSaved }: { onSaved: () => void }) {
             {/* Content area */}
             <div className="flex-1 overflow-y-auto px-8 py-6">
               {!selected ? null
-                : !selected.wantsTranscript ? (
-                  <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
-                    <p className="text-sm text-gray-500">Transcripción desactivada.</p>
-                    <button onClick={() => toggleTranscript(selected.id)}
-                      className="text-xs px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors">
-                      Activar
-                    </button>
+                : selected.status === "uploading" ? (
+                  <div className="flex flex-col items-center justify-center h-full gap-3">
+                    <svg className="animate-spin h-6 w-6 text-indigo-400" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                    </svg>
+                    <p className="text-sm text-gray-500">Subiendo…</p>
                   </div>
                 ) : selected.status === "transcribing" ? (
                   <div className="flex flex-col items-center justify-center h-full gap-3">
@@ -231,8 +255,13 @@ function UploadPanel({ onSaved }: { onSaved: () => void }) {
                   </div>
                 ) : selected.status === "error" ? (
                   <div className="rounded-xl bg-red-50 border border-red-100 px-5 py-4 text-sm text-red-600">{selected.error}</div>
-                ) : selected.status === "done" ? (
+                ) : selected.status === "done" && selected.transcript ? (
                   <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">{selected.transcript}</p>
+                ) : selected.status === "done" ? (
+                  <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
+                    <p className="text-sm text-green-600 font-medium">✓ Guardada</p>
+                    <p className="text-xs text-gray-400">La grabación ya está en tu lista.</p>
+                  </div>
                 ) : null}
             </div>
           </div>

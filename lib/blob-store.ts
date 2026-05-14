@@ -83,6 +83,13 @@ export async function addRecording(
   return withUrl;
 }
 
+/** Register a recording whose audio file is already stored in R2. */
+export async function registerRecording(rec: RecordingMeta): Promise<RecordingMeta> {
+  const index = await readIndex();
+  await writeIndex([rec, ...index]);
+  return rec;
+}
+
 export async function updateRecordingTranscript(id: string, transcript: string): Promise<void> {
   const index = await readIndex();
   await writeIndex(index.map((r) => r.id === id ? { ...r, transcript } : r));

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listRecordings, addRecording } from "@/lib/blob-store";
+import { listRecordings, addRecording, registerRecording } from "@/lib/blob-store";
 
 export async function GET() {
   const recs = await listRecordings();
@@ -16,7 +16,6 @@ export async function POST(req: NextRequest) {
   const contentType = req.headers.get("content-type") ?? "";
 
   if (contentType.includes("application/json")) {
-    // iOS Shortcut sends base64-encoded audio as JSON
     let body: Record<string, string>;
     try {
       const raw = await req.text();
@@ -24,6 +23,25 @@ export async function POST(req: NextRequest) {
     } catch {
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
+
+    // Case 1: file already uploaded to R2 via presigned URL
+    if (body.preUploaded === "true") {
+      const { id: recId, name: recName, mimeType: recMime, ext: recExt } = body;
+      const rawExt = recExt ?? (recMime.split("/")[1] ?? "m4a").split(";")[0];
+      const ext = rawExt === "x-m4a" ? "m4a" : rawExt;
+      const key = `audio/${recId}.${ext}`;
+      const rec = await registerRecording({
+        id: recId,
+        name: recName ?? "Grabación",
+        date: new Date().toISOString(),
+        transcript: "",
+        audioUrl: `${process.env.R2_PUBLIC_URL!.replace(/\/$/, "")}/${key}`,
+        mimeType: recMime ?? "audio/mp4",
+      });
+      return NextResponse.json(rec, { status: 201 });
+    }
+
+    // Case 2: iOS Shortcut — base64-encoded audio
     const b64: string = (body.audioBase64 ?? "").replace(/\s/g, "");
     const mimeType: string = body.mimeType ?? "audio/mp4";
     name = body.name ?? "Nota de voz";
