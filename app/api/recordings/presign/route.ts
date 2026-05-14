@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { S3Client, PutObjectCommand, PutBucketCorsCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 function r2Client() {
@@ -13,47 +13,25 @@ function r2Client() {
       accessKeyId: process.env.R2_ACCESS_KEY_ID!,
       secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
     },
+    // Disable automatic CRC32 checksums — the SDK calculates them for an
+    // empty body at sign time, so R2 rejects the real file on upload.
+    requestChecksumCalculation: "WHEN_REQUIRED" as never,
+    responseChecksumValidation: "WHEN_REQUIRED" as never,
   });
-}
-
-async function ensureCors(client: S3Client, bucket: string): Promise<string | null> {
-  try {
-    await client.send(
-      new PutBucketCorsCommand({
-        Bucket: bucket,
-        CORSConfiguration: {
-          CORSRules: [
-            {
-              AllowedOrigins: ["*"],
-              AllowedMethods: ["GET", "PUT", "HEAD"],
-              AllowedHeaders: ["*"],
-              MaxAgeSeconds: 86400,
-            },
-          ],
-        },
-      }),
-    );
-    return null;
-  } catch (e) {
-    return e instanceof Error ? e.message : String(e);
-  }
 }
 
 export async function POST(req: NextRequest) {
   const { mimeType } = await req.json();
 
   const id = crypto.randomUUID();
-  const rawExt = (mimeType.split("/")[1] ?? "m4a").split(";")[0];
-  const ext = rawExt === "x-m4a" ? "m4a" : rawExt;
+  const ext = (mimeType.split("/")[1] ?? "m4a").split(";")[0];
   const key = `audio/${id}.${ext}`;
 
   const client = r2Client();
   const bucket = process.env.R2_BUCKET_NAME!;
 
-  const corsError = await ensureCors(client, bucket);
-
-  // Generate presigned PUT URL (valid for 1 hour)
-  // We deliberately omit ContentType from the command so the browser
+  // Generate presigned PUT URL (valid for 1 hour).
+  // ContentType is deliberately omitted from the command so the client
   // doesn't need to reproduce it exactly in X-Amz-SignedHeaders.
   const uploadUrl = await getSignedUrl(
     client,
@@ -61,5 +39,5 @@ export async function POST(req: NextRequest) {
     { expiresIn: 3600 },
   );
 
-  return NextResponse.json({ id, uploadUrl, ext, corsError });
+  return NextResponse.json({ id, uploadUrl, ext });
 }

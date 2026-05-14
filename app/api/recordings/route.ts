@@ -27,8 +27,7 @@ export async function POST(req: NextRequest) {
     // Case 1: file already uploaded to R2 via presigned URL
     if (body.preUploaded === "true") {
       const { id: recId, name: recName, mimeType: recMime, ext: recExt } = body;
-      const rawExt = recExt ?? (recMime.split("/")[1] ?? "m4a").split(";")[0];
-      const ext = rawExt === "x-m4a" ? "m4a" : rawExt;
+      const ext = (recExt ?? (recMime.split("/")[1] ?? "m4a").split(";")[0]);
       const key = `audio/${recId}.${ext}`;
       const rec = await registerRecording({
         id: recId,
