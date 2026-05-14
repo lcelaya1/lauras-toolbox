@@ -37,8 +37,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing chunk or id" }, { status: 400 });
   }
 
-  const rawExt = (mimeType.split("/")[1] ?? "m4a").split(";")[0];
-  const ext = rawExt === "x-m4a" ? "m4a" : rawExt;
+  // Keep ext as-is (don't normalise x-m4a → m4a here).
+  // The transcribe route derives the key the same way from the stored mimeType,
+  // so they must stay in sync — both use the raw subtype string.
+  const ext = (mimeType.split("/")[1] ?? "m4a").split(";")[0];
 
   const client = r2Client();
   const bucket = BUCKET();
