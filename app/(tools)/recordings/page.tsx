@@ -16,18 +16,6 @@ function formatDuration(ms?: number) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
-  return (
-    <button
-      onClick={onChange}
-      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors
-        ${on ? "bg-indigo-600" : "bg-gray-200"}`}
-    >
-      <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform
-        ${on ? "translate-x-4" : "translate-x-1"}`} />
-    </button>
-  );
-}
 
 function AudioPlayer({ id, durationMs, mimeType }: { id: string; durationMs?: number; mimeType: string }) {
   const [playing, setPlaying] = useState(false);
@@ -107,7 +95,6 @@ export default function RecordingsPage() {
   const [recordings, setRecordings] = useState<RecordingMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [showTranscript, setShowTranscript] = useState(true);
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [transcribing, setTranscribing] = useState<string | null>(null);
@@ -225,12 +212,6 @@ export default function RecordingsPage() {
               </div>
               <div className="flex items-center gap-4 shrink-0">
                 {selected.transcript && (
-                  <div className="flex items-center gap-2.5">
-                    <span className="text-xs text-gray-500 font-medium">Transcripción</span>
-                    <Toggle on={showTranscript} onChange={() => setShowTranscript((v) => !v)} />
-                  </div>
-                )}
-                {selected.transcript && showTranscript && (
                   <button onClick={() => copy(selected.transcript)}
                     className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors text-gray-600 font-medium">
                     {copied ? "✓ Copiado" : "Copiar"}
@@ -255,7 +236,7 @@ export default function RecordingsPage() {
               </div>
 
               {/* Transcript */}
-              {selected.transcript && showTranscript && (
+              {selected.transcript && (
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-3">Transcripción</p>
                   <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">
