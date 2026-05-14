@@ -11,8 +11,6 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   let file: File | null = null;
   let name = "Grabación";
-  let providedTranscript: string | null = null;
-  let autoTranscribe = true;
   let durationMs: number | undefined;
 
   const contentType = req.headers.get("content-type") ?? "";
@@ -56,8 +54,6 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData();
     file = formData.get("file") as File | null;
     name = (formData.get("name") as string | null) ?? file?.name ?? "Grabación";
-    providedTranscript = formData.get("transcript") as string | null;
-    autoTranscribe = formData.get("transcribe") === "true" || !providedTranscript;
     durationMs = formData.get("durationMs") ? Number(formData.get("durationMs")) : undefined;
   }
 
@@ -65,33 +61,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No file provided" }, { status: 400 });
   }
 
-  let transcript = providedTranscript ?? "";
-
-  if (autoTranscribe || !transcript) {
-    const apiKey = process.env.GROQ_API_KEY;
-    if (apiKey) {
-      try {
-        const groqForm = new FormData();
-        groqForm.append("file", file, file.name);
-        groqForm.append("model", "whisper-large-v3-turbo");
-        groqForm.append("language", "es");
-        groqForm.append("response_format", "text");
-        const res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${apiKey}` },
-          body: groqForm,
-        });
-        if (res.ok) transcript = (await res.text()).trim();
-      } catch { /* proceed without transcript */ }
-    }
-  }
-
+  // No inline transcription — keeps the function fast and within Vercel's timeout.
+  // Transcription is triggered on-demand from the recording detail view.
   const rec = await addRecording(
     {
       id: crypto.randomUUID(),
       name,
       date: new Date().toISOString(),
-      transcript,
+      transcript: "",
       audioUrl: "",
       mimeType: file.type || "audio/mp4",
       durationMs,
