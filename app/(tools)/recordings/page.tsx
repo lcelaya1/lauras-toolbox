@@ -25,30 +25,14 @@ interface UploadedFile {
   recId: string | null; // id in the recordings index (set after registration)
   name: string;
   file: File;
-  wantsTranscript: boolean;
-  status: "idle" | "uploading" | "transcribing" | "done" | "error";
-  transcript: string;
+  status: "idle" | "uploading" | "done" | "error";
   error: string;
-}
-
-function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
-  return (
-    <button
-      onClick={(e) => { e.stopPropagation(); onChange(); }}
-      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors
-        ${on ? "bg-indigo-600" : "bg-gray-200"}`}
-    >
-      <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform
-        ${on ? "translate-x-4" : "translate-x-1"}`} />
-    </button>
-  );
 }
 
 function UploadPanel({ onSaved }: { onSaved: () => void }) {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function upd(id: string, patch: Partial<UploadedFile>) {
@@ -85,24 +69,8 @@ function UploadPanel({ onSaved }: { onSaved: () => void }) {
       return;
     }
 
-    upd(uf.id, { recId });
-    onSaved(); // recording now visible in left panel
-
-    // ── Transcribe server-side (fetches from R2, no re-upload) ──
-    if (uf.wantsTranscript) {
-      upd(uf.id, { status: "transcribing" });
-      try {
-        const tRes = await fetch(`/api/recordings/${recId}/transcribe`, { method: "POST" });
-        const tData = await tRes.json();
-        if (!tRes.ok) throw new Error(tData.error ?? "Error en la transcripción");
-        upd(uf.id, { status: "done", transcript: tData.transcript });
-        onSaved();
-      } catch (err) {
-        upd(uf.id, { status: "error", error: err instanceof Error ? err.message : "Error al transcribir" });
-      }
-    } else {
-      upd(uf.id, { status: "done" });
-    }
+    upd(uf.id, { recId, status: "done" });
+    onSaved(); // recording now visible in left panel — transcribe from there if needed
   }
 
   function addFiles(incoming: FileList | File[]) {
@@ -112,20 +80,12 @@ function UploadPanel({ onSaved }: { onSaved: () => void }) {
       recId: null,
       name: file.name.replace(/\.[^.]+$/, ""),
       file,
-      wantsTranscript: true,
       status: "idle" as const,
-      transcript: "",
       error: "",
     }));
     setFiles((prev) => [...prev, ...added]);
     if (added.length > 0 && !selectedId) setSelectedId(added[0].id);
     added.forEach((f) => processFile(f));
-  }
-
-  async function copy(text: string) {
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   }
 
   const selected = files.find((f) => f.id === selectedId) ?? null;
@@ -178,20 +138,12 @@ function UploadPanel({ onSaved }: { onSaved: () => void }) {
             <h2 className="text-base font-semibold text-gray-900">
               {files.length === 1 ? files[0].name : `${files.length} archivos`}
             </h2>
-            <div className="flex items-center gap-3 shrink-0">
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors text-gray-600 font-medium"
-              >
-                + Añadir
-              </button>
-              {selected && selected.status === "done" && selected.transcript && (
-                <button onClick={() => copy(selected.transcript)}
-                  className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors text-gray-600 font-medium">
-                  {copied ? "✓ Copiado" : "Copiar"}
-                </button>
-              )}
-            </div>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors text-gray-600 font-medium"
+            >
+              + Añadir
+            </button>
           </div>
 
           <div className="flex flex-1 overflow-hidden">
@@ -206,8 +158,7 @@ function UploadPanel({ onSaved }: { onSaved: () => void }) {
                       <p className="text-xs font-medium text-gray-800 truncate">{f.name}</p>
                       <p className="text-[10px] mt-0.5">
                         {f.status === "uploading" && <span className="text-indigo-400">Subiendo…</span>}
-                        {f.status === "transcribing" && <span className="text-indigo-400">Transcribiendo…</span>}
-                        {f.status === "done" && <span className="text-green-500">✓ Listo</span>}
+                        {f.status === "done" && <span className="text-green-500">✓ Guardada</span>}
                         {f.status === "error" && <span className="text-red-400">Error</span>}
                         {f.status === "idle" && <span className="text-gray-400">Esperando…</span>}
                       </p>
@@ -228,24 +179,14 @@ function UploadPanel({ onSaved }: { onSaved: () => void }) {
                     </svg>
                     <p className="text-sm text-gray-500">Subiendo…</p>
                   </div>
-                ) : selected.status === "transcribing" ? (
-                  <div className="flex flex-col items-center justify-center h-full gap-3">
-                    <svg className="animate-spin h-6 w-6 text-indigo-400" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                    </svg>
-                    <p className="text-sm text-gray-500">Transcribiendo…</p>
-                  </div>
                 ) : selected.status === "error" ? (
                   <div className="rounded-xl bg-red-50 border border-red-100 px-5 py-4 text-sm text-red-600">{selected.error}</div>
-                ) : selected.status === "done" && selected.transcript ? (
-                  <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">{selected.transcript}</p>
-                ) : selected.status === "done" ? (
+                ) : (
                   <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
                     <p className="text-sm text-green-600 font-medium">✓ Guardada</p>
-                    <p className="text-xs text-gray-400">La grabación ya está en tu lista.</p>
+                    <p className="text-xs text-gray-400">Puedes transcribirla desde tu lista de grabaciones.</p>
                   </div>
-                ) : null}
+                )}
             </div>
           </div>
         </>
