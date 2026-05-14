@@ -111,6 +111,7 @@ export default function RecordingsPage() {
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [transcribing, setTranscribing] = useState<string | null>(null);
+  const [transcribeError, setTranscribeError] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -135,14 +136,17 @@ export default function RecordingsPage() {
 
   async function handleTranscribe(id: string) {
     setTranscribing(id);
+    setTranscribeError(null);
     try {
       const res = await fetch(`/api/recordings/${id}/transcribe`, { method: "POST" });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      if (!res.ok) throw new Error(data.error ?? "Error desconocido");
       setRecordings((prev) =>
         prev.map((r) => r.id === id ? { ...r, transcript: data.transcript } : r)
       );
-    } catch { /* silent */ }
+    } catch (err) {
+      setTranscribeError(err instanceof Error ? err.message : "Error al transcribir");
+    }
     setTranscribing(null);
   }
 
@@ -278,6 +282,9 @@ export default function RecordingsPage() {
                       </>
                     ) : "Transcribir ahora"}
                   </button>
+                  {transcribeError && (
+                    <p className="text-xs text-red-400">{transcribeError}</p>
+                  )}
                 </div>
               )}
             </div>

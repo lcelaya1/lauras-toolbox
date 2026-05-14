@@ -43,7 +43,10 @@ export async function POST(
   if (!apiKey) return NextResponse.json({ error: "No API key" }, { status: 500 });
 
   const form = new FormData();
-  form.append("file", new Blob([Buffer.from(audioBytes)], { type: rec.mimeType }), `audio.${ext}`);
+  // Normalize MIME type — Groq doesn't accept audio/x-m4a
+  const groqMime = rec.mimeType.includes("x-m4a") ? "audio/mp4" : rec.mimeType;
+  const groqExt  = ext === "x-m4a" ? "m4a" : ext;
+  form.append("file", new Blob([Buffer.from(audioBytes)], { type: groqMime }), `audio.${groqExt}`);
   form.append("model", "whisper-large-v3-turbo");
   form.append("language", "es");
   form.append("response_format", "text");
