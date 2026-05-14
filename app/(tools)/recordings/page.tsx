@@ -110,124 +110,134 @@ function UploadPanel({ onSaved }: { onSaved: () => void }) {
   const selected = files.find((f) => f.id === selectedId) ?? null;
 
   return (
-    <div className="flex h-full">
-      {/* Inner file list */}
-      <div className="w-64 shrink-0 border-r border-gray-100 bg-white flex flex-col">
-        <div className="p-3 border-b border-gray-100">
+    <div className="flex-1 flex flex-col overflow-hidden h-full"
+      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false); }}
+      onDrop={(e) => {
+        e.preventDefault(); setDragging(false);
+        const f = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith("audio/") || /\.(m4a|mp3|wav|ogg|webm)$/i.test(f.name));
+        if (f.length) addFiles(f);
+      }}>
+
+      <input ref={fileInputRef} type="file" multiple
+        accept="audio/mp4,audio/mpeg,audio/wav,audio/ogg,audio/webm,.m4a,.mp3,.wav,.ogg,.webm"
+        className="hidden"
+        onChange={(e) => { if (e.target.files?.length) { addFiles(e.target.files); e.target.value = ""; } }} />
+
+      {dragging ? (
+        <div className="flex-1 m-6 rounded-2xl border-2 border-dashed border-indigo-300 bg-indigo-50 flex items-center justify-center pointer-events-none">
+          <p className="text-sm font-medium text-indigo-600">Suelta el archivo aquí</p>
+        </div>
+      ) : files.length === 0 ? (
+        /* ── Empty state ── */
+        <div className="flex-1 flex flex-col items-center justify-center gap-5 text-center px-8">
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="w-full flex items-center justify-center gap-2 py-2 rounded-lg
-              bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors"
+            className="w-20 h-20 rounded-2xl bg-gray-100 hover:bg-indigo-50 flex items-center justify-center transition-colors group"
           >
-            <svg viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-              <path d="M9.25 13.25a.75.75 0 001.5 0V4.636l2.955 3.129a.75.75 0 001.09-1.03l-4.25-4.5a.75.75 0 00-1.09 0l-4.25 4.5a.75.75 0 101.09 1.03L9.25 4.636v8.614z" />
-              <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-9 h-9 text-gray-300 group-hover:text-indigo-400 transition-colors">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
             </svg>
+          </button>
+          <div>
+            <p className="text-sm font-medium text-gray-600">Arrastra un audio o haz clic para seleccionar</p>
+            <p className="text-xs text-gray-400 mt-1">m4a · mp3 · wav · ogg · webm</p>
+          </div>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors"
+          >
             Seleccionar archivo
           </button>
-          <input ref={fileInputRef} type="file" multiple
-            accept="audio/mp4,audio/mpeg,audio/wav,audio/ogg,audio/webm,.m4a,.mp3,.wav,.ogg,.webm"
-            className="hidden"
-            onChange={(e) => { if (e.target.files?.length) { addFiles(e.target.files); e.target.value = ""; } }} />
         </div>
-        <div className="flex-1 overflow-y-auto py-2">
-          {files.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center mt-6 px-4">Sube un archivo para empezar</p>
-          ) : files.map((f) => (
-            <button key={f.id} onClick={() => setSelectedId(f.id)}
-              className={`w-full text-left px-3 py-2.5 flex items-start gap-2.5 transition-colors
-                ${selectedId === f.id ? "bg-indigo-50 border-r-2 border-indigo-500" : "hover:bg-gray-50"}`}>
-              <svg viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-indigo-400 shrink-0 mt-0.5">
-                <path d="M10 2a1 1 0 00-.707.293l-4 4A1 1 0 005 7v9a1 1 0 001 1h8a1 1 0 001-1V7a1 1 0 00-.293-.707l-4-4A1 1 0 0010 2zm0 2.414L13.586 8H11a1 1 0 01-1-1V4.414z" />
-              </svg>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-gray-800 truncate">{f.name}</p>
-                <p className="text-[10px] mt-0.5">
-                  {f.status === "transcribing" && <span className="text-indigo-400">Transcribiendo…</span>}
-                  {f.status === "done" && <span className="text-green-500">✓ Listo</span>}
-                  {f.status === "error" && <span className="text-red-400">Error</span>}
-                  {f.status === "idle" && <span className="text-gray-400">Sin transcribir</span>}
-                </p>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
+      ) : (
+        /* ── File list ── */
+        <>
+          <div className="px-8 py-5 border-b border-gray-100 flex items-center justify-between gap-4 shrink-0">
+            <h2 className="text-base font-semibold text-gray-900">
+              {files.length === 1 ? files[0].name : `${files.length} archivos`}
+            </h2>
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors text-gray-600 font-medium"
+              >
+                + Añadir
+              </button>
+              {selected && (
+                <>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500">Transcribir</span>
+                    <Toggle on={selected.wantsTranscript} onChange={() => toggleTranscript(selected.id)} />
+                  </div>
+                  {selected.status === "done" && selected.transcript && (
+                    <>
+                      <button onClick={() => copy(selected.transcript)}
+                        className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors text-gray-600 font-medium">
+                        {copied ? "✓ Copiado" : "Copiar"}
+                      </button>
+                      <button onClick={() => handleSave(selected)} disabled={selected.saved}
+                        className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors
+                          ${selected.saved ? "bg-green-100 text-green-700 cursor-default" : "bg-indigo-600 hover:bg-indigo-500 text-white"}`}>
+                        {selected.saved ? "✓ Guardada" : "Guardar"}
+                      </button>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
 
-      {/* Right content */}
-      <div className="flex-1 flex flex-col overflow-hidden"
-        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(e) => { e.preventDefault(); setDragging(false); const f = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith("audio/") || /\.(m4a|mp3|wav|ogg|webm)$/i.test(f.name)); if (f.length) addFiles(f); }}>
-        {dragging ? (
-          <div className="flex-1 m-6 rounded-2xl border-2 border-dashed border-indigo-300 bg-indigo-50 flex flex-col items-center justify-center gap-3 pointer-events-none">
-            <p className="text-sm font-medium text-indigo-600">Suelta el archivo aquí</p>
-          </div>
-        ) : !selected ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-8">
-            <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-8 h-8 text-gray-300">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Arrastra un audio o haz clic en Seleccionar</p>
-              <p className="text-xs text-gray-400 mt-1">m4a · mp3 · wav · ogg · webm</p>
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className="px-8 py-5 border-b border-gray-100 flex items-center justify-between gap-4 shrink-0">
-              <h2 className="text-base font-semibold text-gray-900 truncate">{selected.name}</h2>
-              <div className="flex items-center gap-4 shrink-0">
-                <div className="flex items-center gap-2.5">
-                  <span className="text-xs text-gray-500">Transcribir</span>
-                  <Toggle on={selected.wantsTranscript} onChange={() => toggleTranscript(selected.id)} />
-                </div>
-                {selected.status === "done" && selected.transcript && (
-                  <>
-                    <button onClick={() => copy(selected.transcript)}
-                      className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors text-gray-600 font-medium">
-                      {copied ? "✓ Copiado" : "Copiar"}
-                    </button>
-                    <button onClick={() => handleSave(selected)} disabled={selected.saved}
-                      className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors
-                        ${selected.saved ? "bg-green-100 text-green-700 cursor-default" : "bg-indigo-600 hover:bg-indigo-500 text-white"}`}>
-                      {selected.saved ? "✓ Guardada" : "Guardar"}
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto px-8 py-6">
-              {!selected.wantsTranscript && (
-                <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
-                  <p className="text-sm text-gray-500">Transcripción desactivada.</p>
-                  <button onClick={() => toggleTranscript(selected.id)}
-                    className="text-xs px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors">
-                    Activar
+          <div className="flex flex-1 overflow-hidden">
+            {/* File tabs on the left */}
+            {files.length > 1 && (
+              <div className="w-56 shrink-0 border-r border-gray-100 overflow-y-auto py-2">
+                {files.map((f) => (
+                  <button key={f.id} onClick={() => setSelectedId(f.id)}
+                    className={`w-full text-left px-4 py-2.5 flex items-start gap-2.5 transition-colors
+                      ${selectedId === f.id ? "bg-indigo-50 border-r-2 border-indigo-500" : "hover:bg-gray-50"}`}>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-gray-800 truncate">{f.name}</p>
+                      <p className="text-[10px] mt-0.5">
+                        {f.status === "transcribing" && <span className="text-indigo-400">Transcribiendo…</span>}
+                        {f.status === "done" && <span className="text-green-500">✓ Listo</span>}
+                        {f.status === "error" && <span className="text-red-400">Error</span>}
+                        {f.status === "idle" && <span className="text-gray-400">Sin transcribir</span>}
+                      </p>
+                    </div>
                   </button>
-                </div>
-              )}
-              {selected.wantsTranscript && selected.status === "transcribing" && (
-                <div className="flex flex-col items-center justify-center h-full gap-3">
-                  <svg className="animate-spin h-6 w-6 text-indigo-400" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                  </svg>
-                  <p className="text-sm text-gray-500">Transcribiendo…</p>
-                </div>
-              )}
-              {selected.wantsTranscript && selected.status === "error" && (
-                <div className="rounded-xl bg-red-50 border border-red-100 px-5 py-4 text-sm text-red-600">{selected.error}</div>
-              )}
-              {selected.wantsTranscript && selected.status === "done" && (
-                <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">{selected.transcript}</p>
-              )}
+                ))}
+              </div>
+            )}
+
+            {/* Content area */}
+            <div className="flex-1 overflow-y-auto px-8 py-6">
+              {!selected ? null
+                : !selected.wantsTranscript ? (
+                  <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
+                    <p className="text-sm text-gray-500">Transcripción desactivada.</p>
+                    <button onClick={() => toggleTranscript(selected.id)}
+                      className="text-xs px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors">
+                      Activar
+                    </button>
+                  </div>
+                ) : selected.status === "transcribing" ? (
+                  <div className="flex flex-col items-center justify-center h-full gap-3">
+                    <svg className="animate-spin h-6 w-6 text-indigo-400" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                    </svg>
+                    <p className="text-sm text-gray-500">Transcribiendo…</p>
+                  </div>
+                ) : selected.status === "error" ? (
+                  <div className="rounded-xl bg-red-50 border border-red-100 px-5 py-4 text-sm text-red-600">{selected.error}</div>
+                ) : selected.status === "done" ? (
+                  <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">{selected.transcript}</p>
+                ) : null}
             </div>
-          </>
-        )}
-      </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
