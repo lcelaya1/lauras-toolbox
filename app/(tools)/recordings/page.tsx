@@ -136,20 +136,11 @@ export default function RecordingsPage() {
   async function handleTranscribe(id: string) {
     setTranscribing(id);
     try {
-      const audioRes = await fetch(`/api/recordings/${id}/audio`);
-      const blob = await audioRes.blob();
-      const form = new FormData();
-      form.append("file", blob, "audio.m4a");
-      const res = await fetch("/api/transcribe", { method: "POST", body: form });
+      const res = await fetch(`/api/recordings/${id}/transcribe`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      await fetch(`/api/recordings/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcript: data.text }),
-      });
       setRecordings((prev) =>
-        prev.map((r) => r.id === id ? { ...r, transcript: data.text } : r)
+        prev.map((r) => r.id === id ? { ...r, transcript: data.transcript } : r)
       );
     } catch { /* silent */ }
     setTranscribing(null);

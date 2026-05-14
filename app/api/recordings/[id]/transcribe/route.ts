@@ -1,0 +1,66 @@
+import { NextRequest, NextResponse } from "next/server";
+import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { listRecordings, updateRecordingTranscript } from "@/lib/blob-store";
+
+export const maxDuration = 60;
+
+function r2Client() {
+  return new S3Client({
+    region: "auto",
+    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+    },
+  });
+}
+
+export async function POST(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+
+  const recordings = await listRecordings();
+  const rec = recordings.find((r) => r.id === id);
+  if (!rec) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Fetch audio from R2
+  const ext = (rec.mimeType.split("/")[1] ?? "m4a").split(";")[0];
+  const key = `audio/${id}.${ext}`;
+  let audioBytes: Uint8Array;
+  try {
+    const res = await r2Client().send(
+      new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME!, Key: key }),
+    );
+    audioBytes = await res.Body!.transformToByteArray();
+  } catch {
+    return NextResponse.json({ error: "Audio not found in storage" }, { status: 404 });
+  }
+
+  // Send to Groq
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) return NextResponse.json({ error: "No API key" }, { status: 500 });
+
+  const form = new FormData();
+  form.append("file", new Blob([Buffer.from(audioBytes)], { type: rec.mimeType }), `audio.${ext}`);
+  form.append("model", "whisper-large-v3-turbo");
+  form.append("language", "es");
+  form.append("response_format", "text");
+
+  const groqRes = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+  });
+
+  if (!groqRes.ok) {
+    const err = await groqRes.text();
+    return NextResponse.json({ error: err }, { status: 500 });
+  }
+
+  const transcript = (await groqRes.text()).trim();
+  await updateRecordingTranscript(id, transcript);
+
+  return NextResponse.json({ transcript });
+}
