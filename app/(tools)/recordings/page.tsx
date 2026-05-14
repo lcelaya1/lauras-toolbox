@@ -277,7 +277,13 @@ export default function RecordingsPage() {
     setLoading(false);
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    // Reload whenever the user returns to this tab (e.g. after sending from iPhone)
+    const onVisible = () => { if (document.visibilityState === "visible") load(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
 
   async function handleDelete(id: string) {
     if (confirming !== id) { setConfirming(id); return; }
@@ -314,9 +320,17 @@ export default function RecordingsPage() {
 
       {/* ── Left panel ── */}
       <div className="w-72 shrink-0 border-r border-gray-100 bg-gray-50 flex flex-col">
-        <div className="px-4 py-4 border-b border-gray-100">
-          <h1 className="text-sm font-semibold text-gray-900">Mis grabaciones</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Grabaciones del iPhone y del Transcriptor</p>
+        <div className="px-4 py-4 border-b border-gray-100 flex items-start justify-between">
+          <div>
+            <h1 className="text-sm font-semibold text-gray-900">Mis grabaciones</h1>
+            <p className="text-xs text-gray-400 mt-0.5">Grabaciones del iPhone y del Transcriptor</p>
+          </div>
+          <button onClick={load} title="Actualizar"
+            className="text-gray-400 hover:text-gray-600 transition-colors mt-0.5">
+            <svg viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}>
+              <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
+            </svg>
+          </button>
         </div>
 
         {/* Recordings list */}
