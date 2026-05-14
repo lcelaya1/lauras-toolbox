@@ -63,6 +63,7 @@ function UploadPanel({ onSaved }: { onSaved: () => void }) {
     let recId: string;
     let uploadUrl: string;
     let ext: string;
+    let corsError: string | null = null;
     try {
       const res = await fetch("/api/recordings/presign", {
         method: "POST",
@@ -70,7 +71,7 @@ function UploadPanel({ onSaved }: { onSaved: () => void }) {
         body: JSON.stringify({ mimeType }),
       });
       if (!res.ok) throw new Error("No se pudo obtener la URL de subida");
-      ({ id: recId, uploadUrl, ext } = await res.json());
+      ({ id: recId, uploadUrl, ext, corsError } = await res.json());
     } catch (err) {
       upd(uf.id, { status: "error", error: err instanceof Error ? err.message : "Error al preparar" });
       return;
@@ -81,11 +82,12 @@ function UploadPanel({ onSaved }: { onSaved: () => void }) {
       const putRes = await fetch(uploadUrl, {
         method: "PUT",
         body: uf.file,
-        headers: { "Content-Type": mimeType },
+        // Don't set Content-Type — not included in signed headers, avoids CORS preflight header mismatch
       });
-      if (!putRes.ok) throw new Error(`Error al subir (${putRes.status})`);
+      if (!putRes.ok) throw new Error(`Error al subir a R2 (${putRes.status})`);
     } catch (err) {
-      upd(uf.id, { status: "error", error: err instanceof Error ? err.message : "Error al subir" });
+      const msg = err instanceof Error ? err.message : "Error al subir";
+      upd(uf.id, { status: "error", error: corsError ? `${msg} — CORS: ${corsError}` : msg });
       return;
     }
 
