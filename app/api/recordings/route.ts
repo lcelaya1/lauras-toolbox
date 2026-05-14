@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listRecordings, addRecording, registerRecording } from "@/lib/blob-store";
 
+export const maxDuration = 60;
+
 export async function GET() {
   const recs = await listRecordings();
   return NextResponse.json(recs);
