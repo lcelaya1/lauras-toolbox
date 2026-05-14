@@ -5,21 +5,12 @@ import { usePathname } from "next/navigation";
 
 const tools = [
   {
-    href: "/audio",
-    label: "Transcriptor",
-    icon: (
-      <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-        <path d="M7 4a3 3 0 016 0v6a3 3 0 11-6 0V4z" />
-        <path d="M5.5 9.643a.75.75 0 00-1.5 0V10a6 6 0 0012 0v-.357a.75.75 0 00-1.5 0V10a4.5 4.5 0 01-9 0v-.357z" />
-      </svg>
-    ),
-  },
-  {
     href: "/recordings",
     label: "Mis grabaciones",
     icon: (
       <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-        <path d="M3.5 2A1.5 1.5 0 002 3.5v13A1.5 1.5 0 003.5 18h13a1.5 1.5 0 001.5-1.5V8.621a1.5 1.5 0 00-.44-1.06l-4.12-4.122A1.5 1.5 0 0012.378 3H3.5zm4.75 8.75a.75.75 0 000 1.5h4.5a.75.75 0 000-1.5h-4.5zm0-3a.75.75 0 000 1.5h4.5a.75.75 0 000-1.5h-4.5z" />
+        <path d="M7 4a3 3 0 016 0v6a3 3 0 11-6 0V4z" />
+        <path d="M5.5 9.643a.75.75 0 00-1.5 0V10a6 6 0 0012 0v-.357a.75.75 0 00-1.5 0V10a4.5 4.5 0 01-9 0v-.357z" />
       </svg>
     ),
   },
@@ -61,6 +52,21 @@ export default function Sidebar() {
             </Link>
           );
         })}
+        <Link
+          href="/audio"
+          className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-colors
+            ${path === "/audio"
+              ? "bg-indigo-50 text-indigo-700 font-medium"
+              : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"}`}
+        >
+          <span className={path === "/audio" ? "text-indigo-600" : "text-gray-400"}>
+            <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path d="M9.25 13.25a.75.75 0 001.5 0V4.636l2.955 3.129a.75.75 0 001.09-1.03l-4.25-4.5a.75.75 0 00-1.09 0l-4.25 4.5a.75.75 0 101.09 1.03L9.25 4.636v8.614z" />
+              <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
+            </svg>
+          </span>
+          Subir audio
+        </Link>
       </nav>
 
       {/* Footer */}
