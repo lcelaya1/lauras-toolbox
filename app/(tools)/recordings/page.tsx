@@ -57,57 +57,38 @@ function UploadPanel({ onSaved }: { onSaved: () => void }) {
 
   async function processFile(uf: UploadedFile) {
     const mimeType = uf.file.type || "audio/mp4";
+    const recId = crypto.randomUUID();
+    const CHUNK = 3.5 * 1024 * 1024; // 3.5 MB — safely under Vercel's 4.5 MB limit
+    const totalChunks = Math.max(1, Math.ceil(uf.file.size / CHUNK));
 
-    // 1. Get presigned upload URL
+    // ── Upload file in chunks through Next.js (avoids R2 CORS entirely) ──
     upd(uf.id, { status: "uploading" });
-    let recId: string;
-    let uploadUrl: string;
-    let ext: string;
-    let corsError: string | null = null;
     try {
-      const res = await fetch("/api/recordings/presign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mimeType }),
-      });
-      if (!res.ok) throw new Error("No se pudo obtener la URL de subida");
-      ({ id: recId, uploadUrl, ext, corsError } = await res.json());
-    } catch (err) {
-      upd(uf.id, { status: "error", error: err instanceof Error ? err.message : "Error al preparar" });
-      return;
-    }
+      for (let i = 0; i < totalChunks; i++) {
+        const slice = uf.file.slice(i * CHUNK, (i + 1) * CHUNK);
+        const form = new FormData();
+        form.append("chunk", new Blob([slice], { type: mimeType }), uf.file.name);
+        form.append("id", recId);
+        form.append("chunkIndex", String(i));
+        form.append("totalChunks", String(totalChunks));
+        form.append("mimeType", mimeType);
+        if (i === totalChunks - 1) form.append("name", uf.name); // only needed on last chunk
 
-    // 2. Upload directly to R2 (no server body-size limit)
-    try {
-      const putRes = await fetch(uploadUrl, {
-        method: "PUT",
-        body: uf.file,
-        // Don't set Content-Type — not included in signed headers, avoids CORS preflight header mismatch
-      });
-      if (!putRes.ok) throw new Error(`Error al subir a R2 (${putRes.status})`);
+        const res = await fetch("/api/recordings/upload", { method: "POST", body: form });
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}));
+          throw new Error(d.error ?? `Error al subir parte ${i + 1}`);
+        }
+      }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Error al subir";
-      upd(uf.id, { status: "error", error: corsError ? `${msg} — CORS: ${corsError}` : msg });
-      return;
-    }
-
-    // 3. Register metadata in the recordings index
-    try {
-      const regRes = await fetch("/api/recordings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ preUploaded: "true", id: recId, name: uf.name, mimeType, ext }),
-      });
-      if (!regRes.ok) throw new Error("Error al registrar la grabación");
-    } catch (err) {
-      upd(uf.id, { status: "error", error: err instanceof Error ? err.message : "Error al guardar" });
+      upd(uf.id, { status: "error", error: err instanceof Error ? err.message : "Error al subir" });
       return;
     }
 
     upd(uf.id, { recId });
     onSaved(); // recording now visible in left panel
 
-    // 4. Transcribe server-side (fetches from R2, no client re-upload)
+    // ── Transcribe server-side (fetches from R2, no re-upload) ──
     if (uf.wantsTranscript) {
       upd(uf.id, { status: "transcribing" });
       try {
@@ -115,7 +96,7 @@ function UploadPanel({ onSaved }: { onSaved: () => void }) {
         const tData = await tRes.json();
         if (!tRes.ok) throw new Error(tData.error ?? "Error en la transcripción");
         upd(uf.id, { status: "done", transcript: tData.transcript });
-        onSaved(); // refresh list with transcript
+        onSaved();
       } catch (err) {
         upd(uf.id, { status: "error", error: err instanceof Error ? err.message : "Error al transcribir" });
       }
