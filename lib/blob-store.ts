@@ -100,10 +100,21 @@ export async function removeRecording(id: string): Promise<void> {
   const rec = index.find((r) => r.id === id);
 
   if (rec) {
-    const ext = (rec.mimeType.split("/")[1] ?? "webm").split(";")[0];
+    // Derive the key from the stored audioUrl so we always delete the right
+    // object regardless of how the extension was normalised at upload time.
+    let key: string;
+    if (rec.audioUrl) {
+      const publicBase = PUBLIC_URL();
+      key = rec.audioUrl.startsWith(publicBase)
+        ? rec.audioUrl.slice(publicBase.length).replace(/^\//, "")
+        : `audio/${id}.${(rec.mimeType.split("/")[1] ?? "webm").split(";")[0]}`;
+    } else {
+      key = `audio/${id}.${(rec.mimeType.split("/")[1] ?? "webm").split(";")[0]}`;
+    }
+
     try {
       await r2Client().send(
-        new DeleteObjectCommand({ Bucket: BUCKET(), Key: `audio/${id}.${ext}` }),
+        new DeleteObjectCommand({ Bucket: BUCKET(), Key: key }),
       );
     } catch { /* ignore if already gone */ }
   }
