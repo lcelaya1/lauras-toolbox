@@ -596,13 +596,15 @@ export default function RecordingsPage() {
                     </button>
                   </>
                 )}
-                <button
-                  onClick={() => handleSplit(selected)}
-                  disabled={splitting}
-                  className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors text-gray-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {splitting ? splitStep : "Dividir en 2"}
-                </button>
+                {!selected.transcript && (
+                  <button
+                    onClick={() => handleSplit(selected)}
+                    disabled={splitting}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors text-gray-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {splitting ? splitStep : "Dividir en 2"}
+                  </button>
+                )}
                 <button onClick={() => handleDelete(selected.id)}
                   className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors
                     ${confirming === selected.id ? "bg-red-100 text-red-600 hover:bg-red-200" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>
