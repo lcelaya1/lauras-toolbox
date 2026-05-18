@@ -318,6 +318,9 @@ export default function RecordingsPage() {
   const [selectedSize, setSelectedSize] = useState<number | null>(null);
   const [splitting, setSplitting] = useState(false);
   const [splitStep, setSplitStep] = useState("");
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState("");
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   async function load() {
     setLoading(true);
@@ -340,6 +343,7 @@ export default function RecordingsPage() {
 
   useEffect(() => {
     setSelectedSize(null);
+    setEditingName(false);
     if (!selectedId) return;
     fetch(`/api/recordings/${selectedId}/size`)
       .then(r => r.json())
@@ -394,9 +398,11 @@ export default function RecordingsPage() {
       const targetRate = Math.floor(maxSamples / mid);
       const sampleRate = Math.max(8000, Math.min(targetRate, decoded.sampleRate));
 
+      // Strip any existing split suffix before adding new ones
+      const baseName = rec.name.replace(/\s*\(\d+\/\d+\)$/, "").trim();
       const parts = [
-        { start: 0,   end: mid,             name: `${rec.name} (1/2)` },
-        { start: mid, end: decoded.duration, name: `${rec.name} (2/2)` },
+        { start: 0,   end: mid,             name: `${baseName} (1/2)` },
+        { start: mid, end: decoded.duration, name: `${baseName} (2/2)` },
       ];
 
       for (let i = 0; i < parts.length; i++) {
@@ -439,6 +445,25 @@ export default function RecordingsPage() {
       setSplitting(false);
       setSplitStep("");
     }
+  }
+
+  function startEditingName() {
+    if (!selected) return;
+    setNameInput(selected.name);
+    setEditingName(true);
+    setTimeout(() => { nameInputRef.current?.select(); }, 0);
+  }
+
+  async function saveEditingName() {
+    if (!selected || !nameInput.trim()) { setEditingName(false); return; }
+    const trimmed = nameInput.trim();
+    setEditingName(false);
+    setRecordings(prev => prev.map(r => r.id === selected.id ? { ...r, name: trimmed } : r));
+    await fetch(`/api/recordings/${selected.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: trimmed }),
+    });
   }
 
   const selected = recordings.find((r) => r.id === selectedId) ?? null;
@@ -527,8 +552,28 @@ export default function RecordingsPage() {
         ) : (
           <>
             <div className="px-8 py-5 border-b border-gray-100 flex items-center justify-between gap-4 shrink-0">
-              <div className="min-w-0">
-                <h2 className="text-base font-semibold text-gray-900 truncate">{selected.name}</h2>
+              <div className="min-w-0 flex-1">
+                {editingName ? (
+                  <input
+                    ref={nameInputRef}
+                    value={nameInput}
+                    onChange={e => setNameInput(e.target.value)}
+                    onBlur={saveEditingName}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") saveEditingName();
+                      if (e.key === "Escape") setEditingName(false);
+                    }}
+                    className="text-base font-semibold text-gray-900 w-full border-b border-indigo-400 outline-none bg-transparent pb-0.5"
+                  />
+                ) : (
+                  <h2
+                    onClick={startEditingName}
+                    title="Haz clic para editar"
+                    className="text-base font-semibold text-gray-900 truncate cursor-text hover:text-indigo-600 transition-colors"
+                  >
+                    {selected.name}
+                  </h2>
+                )}
                 <p className="text-xs text-gray-400 mt-0.5">
                   {formatDate(selected.date)}
                   {selectedSize !== null && ` · ${(selectedSize / 1024 / 1024).toFixed(1)} MB`}

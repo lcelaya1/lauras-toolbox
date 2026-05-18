@@ -95,6 +95,11 @@ export async function updateRecordingTranscript(id: string, transcript: string):
   await writeIndex(index.map((r) => r.id === id ? { ...r, transcript } : r));
 }
 
+export async function updateRecordingName(id: string, name: string): Promise<void> {
+  const index = await readIndex();
+  await writeIndex(index.map((r) => r.id === id ? { ...r, name } : r));
+}
+
 export async function removeRecording(id: string): Promise<void> {
   const index = await readIndex();
   const rec = index.find((r) => r.id === id);

@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { removeRecording, updateRecordingTranscript } from "@/lib/blob-store";
+import { removeRecording, updateRecordingTranscript, updateRecordingName } from "@/lib/blob-store";
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const { transcript } = await req.json();
-  await updateRecordingTranscript(id, transcript);
+  const body = await req.json();
+  if (body.transcript !== undefined) await updateRecordingTranscript(id, body.transcript);
+  if (body.name !== undefined) await updateRecordingName(id, body.name);
   return NextResponse.json({ ok: true });
 }
 
