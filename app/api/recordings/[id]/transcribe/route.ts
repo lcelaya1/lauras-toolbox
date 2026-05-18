@@ -63,10 +63,23 @@ export async function POST(
     // Parse rate-limit errors into a readable message
     if (groqRes.status === 429) {
       try {
-        const body = JSON.parse(raw);
-        const msg: string = body?.error?.message ?? "";
-        const retryMatch = msg.match(/try again in (\d+m\d+s|\d+s)/i);
-        const retryIn = retryMatch ? retryMatch[1] : null;
+        // Groq always sends a Retry-After header (seconds)
+        const retryAfter = groqRes.headers.get("retry-after");
+        let retryIn: string | null = null;
+
+        if (retryAfter) {
+          const secs = Math.ceil(parseFloat(retryAfter));
+          const m = Math.floor(secs / 60);
+          const s = secs % 60;
+          retryIn = m > 0 ? `${m}m ${s}s` : `${s}s`;
+        } else {
+          // Fallback: parse from the message text
+          const body = JSON.parse(raw);
+          const msg: string = body?.error?.message ?? "";
+          const match = msg.match(/try again in ([\d]+m\s*[\d]+s|[\d]+m|[\d]+s)/i);
+          retryIn = match ? match[1] : null;
+        }
+
         const friendly = retryIn
           ? `Límite de transcripción alcanzado. Inténtalo de nuevo en ${retryIn}.`
           : "Límite de transcripción alcanzado. Inténtalo en unos minutos.";
