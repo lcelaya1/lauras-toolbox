@@ -33,6 +33,28 @@ function downloadPdf(name: string, date: string, text: string) {
   win.document.close();
 }
 
+function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
+  const numSamples = buffer.length;
+  const out = new ArrayBuffer(44 + numSamples * 2);
+  const view = new DataView(out);
+  const s = (o: number, v: string) => { for (let i = 0; i < v.length; i++) view.setUint8(o + i, v.charCodeAt(i)); };
+  s(0, "RIFF"); view.setUint32(4, out.byteLength - 8, true);
+  s(8, "WAVE"); s(12, "fmt ");
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, buffer.sampleRate, true); view.setUint32(28, buffer.sampleRate * 2, true);
+  view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  s(36, "data"); view.setUint32(40, numSamples * 2, true);
+  // Mix all channels to mono
+  const ch: Float32Array[] = Array.from({ length: buffer.numberOfChannels }, (_, i) => buffer.getChannelData(i));
+  let off = 44;
+  for (let i = 0; i < numSamples; i++) {
+    let v = 0; for (const c of ch) v += c[i]; v /= ch.length;
+    view.setInt16(off, Math.max(-1, Math.min(1, v)) * (v < 0 ? 0x8000 : 0x7FFF), true);
+    off += 2;
+  }
+  return out;
+}
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString("es-ES", {
     day: "numeric", month: "short", year: "numeric",
@@ -293,6 +315,9 @@ export default function RecordingsPage() {
   const [confirming, setConfirming] = useState<string | null>(null);
   const [transcribing, setTranscribing] = useState<string | null>(null);
   const [transcribeError, setTranscribeError] = useState<string | null>(null);
+  const [selectedSize, setSelectedSize] = useState<number | null>(null);
+  const [splitting, setSplitting] = useState(false);
+  const [splitStep, setSplitStep] = useState("");
 
   async function load() {
     setLoading(true);
@@ -312,6 +337,15 @@ export default function RecordingsPage() {
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, []);
+
+  useEffect(() => {
+    setSelectedSize(null);
+    if (!selectedId) return;
+    fetch(`/api/recordings/${selectedId}/size`)
+      .then(r => r.json())
+      .then(d => { if (d.sizeBytes) setSelectedSize(d.sizeBytes); })
+      .catch(() => {});
+  }, [selectedId]);
 
   async function handleDelete(id: string) {
     if (confirming !== id) { setConfirming(id); return; }
@@ -339,6 +373,72 @@ export default function RecordingsPage() {
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function handleSplit(rec: RecordingMeta) {
+    setSplitting(true);
+    try {
+      setSplitStep("Descargando…");
+      const res = await fetch(`/api/recordings/${rec.id}/audio`);
+      if (!res.ok) throw new Error("No se pudo descargar el audio");
+      const arrayBuf = await res.arrayBuffer();
+
+      setSplitStep("Analizando audio…");
+      const audioCtx = new AudioContext();
+      const decoded = await audioCtx.decodeAudioData(arrayBuf);
+      await audioCtx.close();
+
+      const mid = decoded.duration / 2;
+      // Adaptive sample rate: target < 24 MB per half (16-bit mono = 2 bytes/sample)
+      const maxSamples = (24 * 1024 * 1024) / 2;
+      const targetRate = Math.floor(maxSamples / mid);
+      const sampleRate = Math.max(8000, Math.min(targetRate, decoded.sampleRate));
+
+      const parts = [
+        { start: 0,   end: mid,             name: `${rec.name} (1/2)` },
+        { start: mid, end: decoded.duration, name: `${rec.name} (2/2)` },
+      ];
+
+      for (let i = 0; i < parts.length; i++) {
+        const { start, end, name } = parts[i];
+        setSplitStep(`Procesando parte ${i + 1}/2…`);
+        const partDur = end - start;
+        const offCtx = new OfflineAudioContext(1, Math.ceil(partDur * sampleRate), sampleRate);
+        const src = offCtx.createBufferSource();
+        src.buffer = decoded;
+        src.connect(offCtx.destination);
+        src.start(0, start, partDur);
+        const rendered = await offCtx.startRendering();
+        const wav = audioBufferToWav(rendered);
+        const blob = new Blob([wav], { type: "audio/wav" });
+
+        setSplitStep(`Subiendo parte ${i + 1}/2…`);
+        const newId = crypto.randomUUID();
+        const CHUNK = 3.5 * 1024 * 1024;
+        const total = Math.max(1, Math.ceil(blob.size / CHUNK));
+        for (let c = 0; c < total; c++) {
+          const form = new FormData();
+          form.append("chunk", blob.slice(c * CHUNK, (c + 1) * CHUNK), `${name}.wav`);
+          form.append("id", newId);
+          form.append("chunkIndex", String(c));
+          form.append("totalChunks", String(total));
+          form.append("mimeType", "audio/wav");
+          if (c === total - 1) form.append("name", name);
+          const r = await fetch("/api/recordings/upload", { method: "POST", body: form });
+          if (!r.ok) throw new Error(`Error al subir parte ${i + 1}`);
+        }
+      }
+
+      setSplitStep("Limpiando…");
+      await fetch(`/api/recordings/${rec.id}`, { method: "DELETE" });
+      setSelectedId(null);
+      await load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Error al dividir");
+    } finally {
+      setSplitting(false);
+      setSplitStep("");
+    }
   }
 
   const selected = recordings.find((r) => r.id === selectedId) ?? null;
@@ -429,7 +529,10 @@ export default function RecordingsPage() {
             <div className="px-8 py-5 border-b border-gray-100 flex items-center justify-between gap-4 shrink-0">
               <div className="min-w-0">
                 <h2 className="text-base font-semibold text-gray-900 truncate">{selected.name}</h2>
-                <p className="text-xs text-gray-400 mt-0.5">{formatDate(selected.date)}</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {formatDate(selected.date)}
+                  {selectedSize !== null && ` · ${(selectedSize / 1024 / 1024).toFixed(1)} MB`}
+                </p>
               </div>
               <div className="flex items-center gap-3 shrink-0">
                 {selected.transcript && (
@@ -448,6 +551,13 @@ export default function RecordingsPage() {
                     </button>
                   </>
                 )}
+                <button
+                  onClick={() => handleSplit(selected)}
+                  disabled={splitting}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors text-gray-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {splitting ? splitStep : "Dividir en 2"}
+                </button>
                 <button onClick={() => handleDelete(selected.id)}
                   className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors
                     ${confirming === selected.id ? "bg-red-100 text-red-600 hover:bg-red-200" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>
