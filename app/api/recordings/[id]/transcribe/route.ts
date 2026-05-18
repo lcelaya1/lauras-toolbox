@@ -58,8 +58,23 @@ export async function POST(
   });
 
   if (!groqRes.ok) {
-    const err = await groqRes.text();
-    return NextResponse.json({ error: err }, { status: 500 });
+    const raw = await groqRes.text();
+
+    // Parse rate-limit errors into a readable message
+    if (groqRes.status === 429) {
+      try {
+        const body = JSON.parse(raw);
+        const msg: string = body?.error?.message ?? "";
+        const retryMatch = msg.match(/try again in (\d+m\d+s|\d+s)/i);
+        const retryIn = retryMatch ? retryMatch[1] : null;
+        const friendly = retryIn
+          ? `Límite de transcripción alcanzado. Inténtalo de nuevo en ${retryIn}.`
+          : "Límite de transcripción alcanzado. Inténtalo en unos minutos.";
+        return NextResponse.json({ error: friendly }, { status: 429 });
+      } catch { /* fall through to generic */ }
+    }
+
+    return NextResponse.json({ error: "Error al transcribir. Inténtalo de nuevo." }, { status: 500 });
   }
 
   const transcript = (await groqRes.text()).trim();
