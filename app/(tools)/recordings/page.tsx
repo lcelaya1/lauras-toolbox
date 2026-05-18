@@ -251,10 +251,11 @@ function AudioPlayer({ id, durationMs }: { id: string; durationMs?: number }) {
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
+  const [audioDur, setAudioDur] = useState<number | null>(durationMs ? durationMs / 1000 : null);
   const [audioError, setAudioError] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fmtTime = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-  const durSec = durationMs ? durationMs / 1000 : null;
+  const durSec = audioDur;
 
   async function togglePlay() {
     const a = audioRef.current;
@@ -277,11 +278,15 @@ function AudioPlayer({ id, durationMs }: { id: string; durationMs?: number }) {
   return (
     <div className="flex items-center gap-3">
       <audio ref={audioRef} src={`/api/recordings/${id}/audio`} preload="metadata"
+        onLoadedMetadata={() => {
+          const a = audioRef.current; if (!a) return;
+          if (a.duration && isFinite(a.duration)) setAudioDur(a.duration);
+        }}
         onTimeUpdate={() => {
           const a = audioRef.current; if (!a) return;
           setCurrentTime(a.currentTime);
-          const dur = durationMs ? durationMs / 1000 : a.duration;
-          if (dur && isFinite(dur)) setProgress(a.currentTime / dur);
+          const dur = audioDur ?? (isFinite(a.duration) ? a.duration : null);
+          if (dur) setProgress(a.currentTime / dur);
         }}
         onEnded={() => { setPlaying(false); setProgress(0); setCurrentTime(0); }}
         onError={() => setAudioError(true)} />
@@ -297,7 +302,7 @@ function AudioPlayer({ id, durationMs }: { id: string; durationMs?: number }) {
         </div>
         <div className="flex justify-between text-[10px] text-gray-400">
           <span>{fmtTime(currentTime)}</span>
-          <span>{durSec ? fmtTime(durSec) : "—"}</span>
+          <span>{durSec ? `−${fmtTime(Math.max(0, durSec - currentTime))}` : "—"}</span>
         </div>
       </div>
     </div>
