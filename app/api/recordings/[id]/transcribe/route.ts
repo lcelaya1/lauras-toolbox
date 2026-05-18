@@ -38,6 +38,16 @@ export async function POST(
     return NextResponse.json({ error: "Audio not found in storage" }, { status: 404 });
   }
 
+  // Groq's Whisper limit is 25 MB
+  const MAX_BYTES = 25 * 1024 * 1024;
+  if (audioBytes.length > MAX_BYTES) {
+    const mb = (audioBytes.length / 1024 / 1024).toFixed(1);
+    return NextResponse.json(
+      { error: `El archivo pesa ${mb} MB y supera el límite de 25 MB de Groq. Prueba con una grabación más corta.` },
+      { status: 413 },
+    );
+  }
+
   // Send to Groq
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "No API key" }, { status: 500 });
