@@ -5,6 +5,34 @@ import type { RecordingMeta } from "@/lib/blob-store";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+function downloadTxt(name: string, text: string) {
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${name}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadPdf(name: string, date: string, text: string) {
+  const win = window.open("", "_blank");
+  if (!win) return;
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${name}</title>
+    <style>
+      body{font-family:Georgia,serif;max-width:680px;margin:48px auto;padding:0 24px;color:#111;line-height:1.7}
+      h1{font-size:20px;font-weight:600;margin:0 0 6px}
+      .meta{font-size:12px;color:#888;margin-bottom:32px}
+      p{font-size:14px;white-space:pre-wrap;margin:0}
+      @media print{body{margin:0;padding:24px}}
+    </style></head><body>
+    <h1>${name}</h1><div class="meta">${date} · Transcripción</div>
+    <p>${text.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>
+    <script>window.onload=()=>{window.print();window.close()}<\/script>
+    </body></html>`);
+  win.document.close();
+}
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString("es-ES", {
     day: "numeric", month: "short", year: "numeric",
@@ -405,10 +433,20 @@ export default function RecordingsPage() {
               </div>
               <div className="flex items-center gap-3 shrink-0">
                 {selected.transcript && (
-                  <button onClick={() => copy(selected.transcript)}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors text-gray-600 font-medium">
-                    {copied ? "✓ Copiado" : "Copiar"}
-                  </button>
+                  <>
+                    <button onClick={() => copy(selected.transcript)}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors text-gray-600 font-medium">
+                      {copied ? "✓ Copiado" : "Copiar"}
+                    </button>
+                    <button onClick={() => downloadTxt(selected.name, selected.transcript)}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors text-gray-600 font-medium">
+                      .txt
+                    </button>
+                    <button onClick={() => downloadPdf(selected.name, formatDate(selected.date), selected.transcript)}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors text-gray-600 font-medium">
+                      PDF
+                    </button>
+                  </>
                 )}
                 <button onClick={() => handleDelete(selected.id)}
                   className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors
