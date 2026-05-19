@@ -314,8 +314,15 @@ function AudioPlayer({ id, durationMs }: { id: string; durationMs?: number }) {
 export default function RecordingsPage() {
   const [recordings, setRecordings] = useState<RecordingMeta[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<"upload" | "recording">("recording");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
+  const [view, setView] = useState<"upload" | "recording">(() => {
+    if (typeof window === "undefined") return "recording";
+    return (localStorage.getItem("recordings_view") as "upload" | "recording") ?? "recording";
+  });
+  const [selectedId, setSelectedId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem("recordings_selected_id");
+  });
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [transcribing, setTranscribing] = useState<string | null>(null);
@@ -327,13 +334,22 @@ export default function RecordingsPage() {
   const [nameInput, setNameInput] = useState("");
   const nameInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (selectedId) localStorage.setItem("recordings_selected_id", selectedId);
+    else localStorage.removeItem("recordings_selected_id");
+  }, [selectedId]);
+
+  useEffect(() => {
+    localStorage.setItem("recordings_view", view);
+  }, [view]);
+
   async function load() {
     setLoading(true);
     try {
       const res = await fetch("/api/recordings");
       const data = await res.json();
       setRecordings(data);
-      if (data.length > 0 && !selectedId) setSelectedId(data[0].id);
+      setLastLoadedAt(new Date().toISOString());
     } catch { setRecordings([]); }
     setLoading(false);
   }
@@ -481,7 +497,11 @@ export default function RecordingsPage() {
         <div className="px-4 py-4 border-b border-gray-100 flex items-start justify-between">
           <div>
             <h1 className="text-sm font-semibold text-gray-900">Mis grabaciones</h1>
-            <p className="text-xs text-gray-400 mt-0.5">Grabaciones del iPhone y del Transcriptor</p>
+            {lastLoadedAt ? (
+              <p className="text-[10px] text-gray-400 mt-0.5">Sync: {formatDate(lastLoadedAt)}</p>
+            ) : (
+              <p className="text-[10px] text-gray-400 mt-0.5">Grabaciones del iPhone y del Transcriptor</p>
+            )}
           </div>
           <button onClick={load} title="Actualizar"
             className="text-gray-400 hover:text-gray-600 transition-colors mt-0.5">

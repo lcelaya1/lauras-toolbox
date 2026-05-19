@@ -2,18 +2,18 @@ import Link from "next/link";
 
 const tools = [
   {
-    href: "/audio",
-    emoji: "🎙",
-    title: "Transcriptor de audio",
-    description: "Graba o sube un archivo de audio y obtén la transcripción en español al instante con Groq Whisper.",
-    tag: "IA · Whisper",
-  },
-  {
     href: "/recordings",
     emoji: "📼",
     title: "Mis grabaciones",
     description: "Biblioteca de grabaciones guardadas con su transcripción. Accede, reproduce y copia desde un solo lugar.",
     tag: "Biblioteca",
+  },
+  {
+    href: "/meetings",
+    emoji: "📅",
+    title: "Mis reuniones",
+    description: "Notas de reuniones sincronizadas desde Granola AI. Guardadas para siempre, aunque caduquen en la app.",
+    tag: "Granola · Sync",
   },
 ];
 
@@ -48,11 +48,6 @@ export default function Home() {
           </Link>
         ))}
 
-        {/* Placeholder for next tool */}
-        <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-gray-200 p-5 text-center">
-          <span className="text-2xl">＋</span>
-          <p className="text-xs text-gray-400">Próxima herramienta</p>
-        </div>
       </div>
     </div>
   );
