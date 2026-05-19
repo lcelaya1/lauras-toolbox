@@ -165,18 +165,4 @@ const handler = createMcpHandler(
   },
 );
 
-function isAuthorized(req: Request): boolean {
-  const secret = process.env.MCP_SECRET;
-  if (!secret) return true;
-  return req.headers.get("authorization") === `Bearer ${secret}`;
-}
-
-export async function GET(req: Request) {
-  if (!isAuthorized(req)) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-  return handler(req);
-}
-
-export async function POST(req: Request) {
-  if (!isAuthorized(req)) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-  return handler(req);
-}
+export { handler as GET, handler as POST };
