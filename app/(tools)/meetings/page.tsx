@@ -384,7 +384,9 @@ export default function MeetingsPage() {
                       ? "border-indigo-500 text-indigo-600"
                       : "border-transparent text-gray-400 hover:text-gray-600"}`}
                 >
-                  {tab === "tareas" ? `Tareas${selected.tasks.length > 0 ? ` (${selected.tasks.length})` : ""}` : "Notas"}
+                  {tab === "tareas" && selected.tasks.length > 0
+                    ? `Tareas (${selected.tasks.filter(t => t.done).length}/${selected.tasks.length})`
+                    : tab === "tareas" ? "Tareas" : "Notas"}
                 </button>
               ))}
             </div>
