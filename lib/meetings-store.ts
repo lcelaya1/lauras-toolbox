@@ -1,8 +1,11 @@
 import { createClient } from "@libsql/client";
 
+export type TaskCategory = "FG" | "COPSUP" | "VEN" | "4o" | "WF" | "OPS" | "PFGs";
+
 export interface Task {
   text: string;
   done: boolean;
+  category?: TaskCategory;
 }
 
 export interface MeetingMeta {

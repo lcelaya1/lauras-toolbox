@@ -1,7 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { MeetingMeta, Task } from "@/lib/meetings-store";
+import type { MeetingMeta, Task, TaskCategory } from "@/lib/meetings-store";
+
+const CATEGORY_LABELS: Record<TaskCategory, string> = {
+  FG:     "Future Game",
+  COPSUP: "COP / SUP",
+  VEN:    "Ventures",
+  "4o":   "4o",
+  WF:     "Workshop Fundamentals",
+  OPS:    "Operations",
+  PFGs:   "PFGs",
+};
+
+const CATEGORY_ORDER: TaskCategory[] = ["FG", "COPSUP", "VEN", "4o", "WF", "OPS", "PFGs"];
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString("es-ES", {
@@ -427,39 +439,61 @@ export default function MeetingsPage() {
                     <p className="text-sm text-gray-400 italic">
                       No hay tareas todavía. Pídele a Claude que extraiga las tareas de esta reunión.
                     </p>
-                  ) : (
-                    <ul className="flex flex-col gap-1.5">
-                      {selected.tasks.map((task, i) => (
-                        <li key={i} className="group flex items-start gap-2.5">
-                          <button
-                            onClick={() => handleToggleTask(selected.id, i)}
-                            className={`mt-0.5 w-4 h-4 shrink-0 rounded border transition-colors flex items-center justify-center
-                              ${task.done
-                                ? "bg-indigo-600 border-indigo-600"
-                                : "border-gray-300 hover:border-indigo-400 bg-white"}`}
-                          >
-                            {task.done && (
-                              <svg viewBox="0 0 12 12" fill="none" className="w-2.5 h-2.5">
-                                <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                              </svg>
-                            )}
-                          </button>
-                          <span className={`flex-1 text-sm leading-snug ${task.done ? "line-through text-gray-400" : "text-gray-800"}`}>
-                            {task.text}
-                          </span>
-                          <button
-                            onClick={() => handleDeleteTask(selected.id, i)}
-                            className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-red-400 mt-0.5 shrink-0"
-                            title="Eliminar tarea"
-                          >
-                            <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
-                              <path fillRule="evenodd" d="M5 3.25V4H2.75a.75.75 0 0 0 0 1.5h.3l.815 6.932A1.75 1.75 0 0 0 5.61 14h4.78a1.75 1.75 0 0 0 1.745-1.568L12.95 5.5h.3a.75.75 0 0 0 0-1.5H11v-.75A2.25 2.25 0 0 0 8.75 1h-1.5A2.25 2.25 0 0 0 5 3.25Zm2.25-.75a.75.75 0 0 0-.75.75V4h3v-.75a.75.75 0 0 0-.75-.75h-1.5ZM6.05 6a.75.75 0 0 1 .787.713l.275 5.5a.75.75 0 0 1-1.498.075l-.275-5.5A.75.75 0 0 1 6.05 6Zm3.9 0a.75.75 0 0 1 .712.787l-.275 5.5a.75.75 0 0 1-1.498-.075l.275-5.5A.75.75 0 0 1 9.95 6Z" clipRule="evenodd" />
-                            </svg>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  ) : (() => {
+                    // Group tasks by category preserving original indices
+                    const grouped = new Map<string, { task: Task; index: number }[]>();
+                    selected.tasks.forEach((task, i) => {
+                      const cat = task.category ?? "OPS";
+                      if (!grouped.has(cat)) grouped.set(cat, []);
+                      grouped.get(cat)!.push({ task, index: i });
+                    });
+                    const orderedKeys = [
+                      ...CATEGORY_ORDER.filter((c) => grouped.has(c)),
+                      ...[...grouped.keys()].filter((c) => !CATEGORY_ORDER.includes(c as TaskCategory)),
+                    ];
+                    return (
+                      <div className="flex flex-col gap-5">
+                        {orderedKeys.map((cat) => (
+                          <div key={cat}>
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+                              {CATEGORY_LABELS[cat as TaskCategory] ?? cat}
+                            </p>
+                            <ul className="flex flex-col gap-1.5">
+                              {grouped.get(cat)!.map(({ task, index: i }) => (
+                                <li key={i} className="group flex items-start gap-2.5">
+                                  <button
+                                    onClick={() => handleToggleTask(selected.id, i)}
+                                    className={`mt-0.5 w-4 h-4 shrink-0 rounded border transition-colors flex items-center justify-center
+                                      ${task.done
+                                        ? "bg-indigo-600 border-indigo-600"
+                                        : "border-gray-300 hover:border-indigo-400 bg-white"}`}
+                                  >
+                                    {task.done && (
+                                      <svg viewBox="0 0 12 12" fill="none" className="w-2.5 h-2.5">
+                                        <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                      </svg>
+                                    )}
+                                  </button>
+                                  <span className={`flex-1 text-sm leading-snug ${task.done ? "line-through text-gray-400" : "text-gray-800"}`}>
+                                    {task.text}
+                                  </span>
+                                  <button
+                                    onClick={() => handleDeleteTask(selected.id, i)}
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-red-400 mt-0.5 shrink-0"
+                                    title="Eliminar tarea"
+                                  >
+                                    <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                                      <path fillRule="evenodd" d="M5 3.25V4H2.75a.75.75 0 0 0 0 1.5h.3l.815 6.932A1.75 1.75 0 0 0 5.61 14h4.78a1.75 1.75 0 0 0 1.745-1.568L12.95 5.5h.3a.75.75 0 0 0 0-1.5H11v-.75A2.25 2.25 0 0 0 8.75 1h-1.5A2.25 2.25 0 0 0 5 3.25Zm2.25-.75a.75.75 0 0 0-.75.75V4h3v-.75a.75.75 0 0 0-.75-.75h-1.5ZM6.05 6a.75.75 0 0 1 .787.713l.275 5.5a.75.75 0 0 1-1.498.075l-.275-5.5A.75.75 0 0 1 6.05 6Zm3.9 0a.75.75 0 0 1 .712.787l-.275 5.5a.75.75 0 0 1-1.498-.075l.275-5.5A.75.75 0 0 1 9.95 6Z" clipRule="evenodd" />
+                                    </svg>
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 

@@ -111,10 +111,22 @@ const handler = createMcpHandler(
       "save_tasks",
       {
         title: "Save Tasks",
-        description: "Save a list of tasks extracted from a meeting back into the app. Tasks will appear as a checklist in the meeting detail view.",
+        description: `Save a list of tasks extracted from a meeting back into the app. Each task must be assigned one of Laura's project categories:
+- FG → Future Game
+- COPSUP → COP / SUP
+- VEN → Ventures
+- 4o → 4o
+- WF → Workshop Fundamentals
+- OPS → Operations (use for general or cross-cutting tasks)
+- PFGs → PFGs
+Tasks will appear grouped by category in the meeting detail view.`,
         inputSchema: {
           meetingId: z.string().describe("Meeting ID from list_meetings or get_meeting"),
-          tasks: z.array(z.string()).describe("List of task descriptions assigned to Laura"),
+          tasks: z.array(z.object({
+            text: z.string().describe("Task description"),
+            category: z.enum(["FG", "COPSUP", "VEN", "4o", "WF", "OPS", "PFGs"])
+              .describe("Project category for this task. Default to OPS if unclear."),
+          })).describe("List of tasks assigned to Laura, each with a category"),
         },
       },
       async ({ meetingId, tasks }) => {
@@ -123,7 +135,7 @@ const handler = createMcpHandler(
         if (!meeting) {
           return { content: [{ type: "text" as const, text: `Meeting ${meetingId} not found.` }], isError: true };
         }
-        const taskObjects = tasks.map((text) => ({ text, done: false }));
+        const taskObjects = tasks.map(({ text, category }) => ({ text, done: false, category }));
         await updateTasks(meetingId, taskObjects);
         return {
           content: [{
