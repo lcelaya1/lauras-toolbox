@@ -620,7 +620,7 @@ export default function MeetingsPage() {
                                           <>
                                             <button
                                               onClick={(e) => { e.stopPropagation(); setCategoryDropdown(categoryDropdown?.index === i && categoryDropdown?.meetingId === selected.id ? null : { meetingId: selected.id, index: i }); }}
-                                              className="text-sm font-semibold text-gray-400 hover:text-indigo-500 transition-colors mt-[4px]"
+                                              className="text-sm font-semibold text-gray-400 hover:text-indigo-500 transition-colors"
                                             >
                                               {cat} —
                                             </button>
