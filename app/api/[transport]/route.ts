@@ -124,7 +124,7 @@ Tasks will appear grouped by category in the meeting detail view.`,
           meetingId: z.string().describe("Meeting ID from list_meetings or get_meeting"),
           tasks: z.array(z.object({
             text: z.string().describe("Task description"),
-            category: z.enum(["FG", "COPSUP", "VEN", "4o", "WF", "OPS", "PFGs"])
+            category: z.enum(["FG", "COPSUP", "VEN", "4o", "WF", "OPS", "PFGs", "TiB"])
               .describe("Project category for this task. Default to OPS if unclear."),
           })).describe("List of tasks assigned to Laura, each with a category"),
         },

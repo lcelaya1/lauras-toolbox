@@ -1,6 +1,6 @@
 import { createClient } from "@libsql/client";
 
-export type TaskCategory = "FG" | "COPSUP" | "VEN" | "4o" | "WF" | "OPS" | "PFGs";
+export type TaskCategory = "FG" | "COPSUP" | "VEN" | "4o" | "WF" | "OPS" | "PFGs" | "TiB";
 
 export interface Task {
   id: string;       // stable UUID so Reminders can reference back

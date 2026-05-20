@@ -11,9 +11,10 @@ const CATEGORY_LABELS: Record<TaskCategory, string> = {
   WF:     "Workshop Fundamentals",
   OPS:    "Operations",
   PFGs:   "PFGs",
+  TiB:    "Tech in Biz",
 };
 
-const CATEGORY_ORDER: TaskCategory[] = ["FG", "COPSUP", "VEN", "4o", "WF", "OPS", "PFGs"];
+const CATEGORY_ORDER: TaskCategory[] = ["FG", "COPSUP", "VEN", "4o", "WF", "OPS", "PFGs", "TiB"];
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString("es-ES", {
@@ -624,10 +625,10 @@ export default function MeetingsPage() {
                                                     <button
                                                       key={c}
                                                       onClick={() => handleUpdateTaskCategory(selected.id, i, c)}
-                                                      className={`w-full text-left px-3 py-1.5 text-xs transition-colors hover:bg-indigo-50
-                                                        ${c === (task.category ?? "OPS") ? "text-indigo-600 font-semibold" : "text-gray-700"}`}
+                                                      className={`w-full text-left px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-indigo-50
+                                                        ${c === (task.category ?? "OPS") ? "text-indigo-600" : "text-gray-600"}`}
                                                     >
-                                                      <span className="font-semibold">{c}</span> — {CATEGORY_LABELS[c]}
+                                                      {c}
                                                     </button>
                                                   ))}
                                                 </div>
