@@ -587,7 +587,8 @@ export default function MeetingsPage() {
                                     )}
                                   </button>
                                   {editingTask?.meetingId === selected.id && editingTask?.index === i ? (
-                                    <span className="flex-1 flex items-center gap-1.5 min-w-0">
+                                    <>
+                                      <span className="text-sm font-semibold text-gray-400 shrink-0">{cat} —</span>
                                       <textarea
                                         autoFocus
                                         rows={1}
@@ -608,7 +609,7 @@ export default function MeetingsPage() {
                                         }}
                                         className="flex-1 min-w-0 text-sm text-gray-800 border-b border-indigo-400 outline-none bg-transparent py-0.5 resize-none overflow-hidden leading-snug"
                                       />
-                                    </span>
+                                    </>
                                   ) : (
                                     <>
                                       {/* Category label with dropdown */}
