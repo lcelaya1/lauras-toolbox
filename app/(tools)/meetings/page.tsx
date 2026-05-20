@@ -572,10 +572,10 @@ export default function MeetingsPage() {
                             </p>
                             <ul className="flex flex-col gap-1.5">
                               {grouped.get(cat)!.map(({ task, index: i }) => (
-                                <li key={i} className="group flex items-center gap-2.5">
+                                <li key={i} className="group flex items-start gap-2.5">
                                   <button
                                     onClick={() => handleToggleTask(selected.id, i)}
-                                    className={`w-4 h-4 shrink-0 rounded border transition-colors flex items-center justify-center
+                                    className={`mt-[3px] w-4 h-4 shrink-0 rounded border transition-colors flex items-center justify-center
                                       ${task.done
                                         ? "bg-indigo-600 border-indigo-600"
                                         : "border-gray-300 hover:border-indigo-400 bg-white"}`}
@@ -620,7 +620,7 @@ export default function MeetingsPage() {
                                           <>
                                             <button
                                               onClick={(e) => { e.stopPropagation(); setCategoryDropdown(categoryDropdown?.index === i && categoryDropdown?.meetingId === selected.id ? null : { meetingId: selected.id, index: i }); }}
-                                              className="text-sm font-semibold text-gray-400 hover:text-indigo-500 transition-colors"
+                                              className="text-sm font-semibold text-gray-400 hover:text-indigo-500 transition-colors mt-[3px]"
                                             >
                                               {cat} —
                                             </button>
