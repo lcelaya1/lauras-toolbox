@@ -448,9 +448,10 @@ export default function MeetingsPage() {
                       <button
                         onClick={async () => {
                           const res = await fetch(`/api/tasks/all-reminder-links?meetingId=${selected.id}`);
-                          const { shortcutUrl, count } = await res.json();
+                          const { payload, count } = await res.json();
                           if (count === 0) return;
-                          window.location.href = shortcutUrl;
+                          await navigator.clipboard.writeText(payload);
+                          window.location.href = `shortcuts://run-shortcut?name=A%C3%B1adir%20todas%20a%20Reminders`;
                         }}
                         className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-500 font-medium transition-colors"
                       >
@@ -507,8 +508,9 @@ export default function MeetingsPage() {
                                         name: `${cat} - ${task.text}`,
                                       });
                                       const res = await fetch(`/api/tasks/reminder-link?${params}`);
-                                      const { shortcutUrl } = await res.json();
-                                      window.location.href = shortcutUrl;
+                                      const { payload } = await res.json();
+                                      await navigator.clipboard.writeText(payload);
+                                      window.location.href = `shortcuts://run-shortcut?name=A%C3%B1adir%20a%20Reminders`;
                                     }}
                                     className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-orange-400 mt-0.5 shrink-0"
                                     title="Enviar a Reminders"

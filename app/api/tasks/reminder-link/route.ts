@@ -19,7 +19,6 @@ export async function GET(req: NextRequest) {
   const completeUrl = `${appUrl}/api/tasks/complete?taskId=${taskId}&meetingId=${meetingId}&token=${secret}`;
 
   const payload = JSON.stringify({ name, notes: completeUrl });
-  const shortcutUrl = `shortcuts://run-shortcut?name=A%C3%B1adir%20a%20Reminders&input=text&text=${encodeURIComponent(payload)}`;
 
-  return NextResponse.json({ shortcutUrl });
+  return NextResponse.json({ payload });
 }

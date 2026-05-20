@@ -22,12 +22,10 @@ export async function GET(req: NextRequest) {
 
   const pending = meeting.tasks.filter((t) => !t.done);
 
-  const payload = pending.map((task) => ({
+  const payload = JSON.stringify(pending.map((task) => ({
     name: `${task.category ?? "OPS"} - ${task.text}`,
     notes: `${appUrl}/api/tasks/complete?taskId=${task.id}&meetingId=${meetingId}&token=${secret}`,
-  }));
+  })));
 
-  const shortcutUrl = `shortcuts://run-shortcut?name=A%C3%B1adir%20todas%20a%20Reminders&input=text&text=${encodeURIComponent(JSON.stringify(payload))}`;
-
-  return NextResponse.json({ shortcutUrl, count: pending.length });
+  return NextResponse.json({ payload, count: pending.length });
 }
