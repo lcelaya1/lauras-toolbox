@@ -588,7 +588,7 @@ export default function MeetingsPage() {
                                   </button>
                                   {editingTask?.meetingId === selected.id && editingTask?.index === i ? (
                                     <>
-                                      <span className="text-sm font-semibold text-gray-400 shrink-0">{cat} —</span>
+                                      <span className="text-sm font-semibold text-gray-400 shrink-0 py-0.5 leading-snug">{cat} —</span>
                                       <textarea
                                         autoFocus
                                         rows={1}
