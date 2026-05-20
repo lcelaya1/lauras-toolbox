@@ -87,6 +87,7 @@ export default function MeetingsPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"tareas" | "notas">("tareas");
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState("");
   const [savingNotes, setSavingNotes] = useState(false);
@@ -255,7 +256,7 @@ export default function MeetingsPage() {
             meetings.map((m) => (
               <button
                 key={m.id}
-                onClick={() => { setSelectedId(m.id); setConfirming(null); setEditingNotes(false); setAdding(false); }}
+                onClick={() => { setSelectedId(m.id); setConfirming(null); setEditingNotes(false); setAdding(false); setActiveTab("tareas"); }}
                 className={`w-full text-left px-4 py-3 flex items-start gap-3 transition-colors
                   ${selectedId === m.id ? "bg-indigo-50 border-r-2 border-indigo-500" : "hover:bg-gray-100"}`}
               >
@@ -372,10 +373,26 @@ export default function MeetingsPage() {
               </button>
             </div>
 
+            {/* Tabs bar */}
+            <div className="px-8 border-b border-gray-100 flex gap-1 shrink-0">
+              {(["tareas", "notas"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => { setActiveTab(tab); setEditingNotes(false); }}
+                  className={`px-4 py-2.5 text-xs font-semibold capitalize transition-colors border-b-2 -mb-px
+                    ${activeTab === tab
+                      ? "border-indigo-500 text-indigo-600"
+                      : "border-transparent text-gray-400 hover:text-gray-600"}`}
+                >
+                  {tab === "tareas" ? `Tareas${selected.tasks.length > 0 ? ` (${selected.tasks.length})` : ""}` : "Notas"}
+                </button>
+              ))}
+            </div>
+
             {/* Body */}
             <div className="flex-1 overflow-y-auto px-8 py-6 flex flex-col gap-6">
 
-              {/* Attendees */}
+              {/* Attendees — always visible */}
               {attendees.length > 0 && (
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Asistentes</p>
@@ -389,38 +406,42 @@ export default function MeetingsPage() {
                 </div>
               )}
 
-              {/* Tasks */}
-              {selected.tasks.length > 0 && (
+              {/* Tasks tab */}
+              {activeTab === "tareas" && (
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
-                    Tareas asignadas
-                  </p>
-                  <ul className="flex flex-col gap-1.5">
-                    {selected.tasks.map((task, i) => (
-                      <li key={i} className="flex items-start gap-2.5">
-                        <button
-                          onClick={() => handleToggleTask(selected.id, i)}
-                          className={`mt-0.5 w-4 h-4 shrink-0 rounded border transition-colors flex items-center justify-center
-                            ${task.done
-                              ? "bg-indigo-600 border-indigo-600"
-                              : "border-gray-300 hover:border-indigo-400 bg-white"}`}
-                        >
-                          {task.done && (
-                            <svg viewBox="0 0 12 12" fill="none" className="w-2.5 h-2.5">
-                              <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                          )}
-                        </button>
-                        <span className={`text-sm leading-snug ${task.done ? "line-through text-gray-400" : "text-gray-800"}`}>
-                          {task.text}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
+                  {selected.tasks.length === 0 ? (
+                    <p className="text-sm text-gray-400 italic">
+                      No hay tareas todavía. Pídele a Claude que extraiga las tareas de esta reunión.
+                    </p>
+                  ) : (
+                    <ul className="flex flex-col gap-1.5">
+                      {selected.tasks.map((task, i) => (
+                        <li key={i} className="flex items-start gap-2.5">
+                          <button
+                            onClick={() => handleToggleTask(selected.id, i)}
+                            className={`mt-0.5 w-4 h-4 shrink-0 rounded border transition-colors flex items-center justify-center
+                              ${task.done
+                                ? "bg-indigo-600 border-indigo-600"
+                                : "border-gray-300 hover:border-indigo-400 bg-white"}`}
+                          >
+                            {task.done && (
+                              <svg viewBox="0 0 12 12" fill="none" className="w-2.5 h-2.5">
+                                <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            )}
+                          </button>
+                          <span className={`text-sm leading-snug ${task.done ? "line-through text-gray-400" : "text-gray-800"}`}>
+                            {task.text}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               )}
 
-              {/* Notes */}
+              {/* Notes tab */}
+              {activeTab === "notas" && (
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Notas</p>
@@ -460,11 +481,11 @@ export default function MeetingsPage() {
                 ) : (
                   <MarkdownNotes markdown={selected.summaryMarkdown || selected.summary} />
                 )}
+                <p className="text-[10px] text-gray-300 mt-4">
+                  Guardado el {formatDate(selected.syncedAt)}
+                </p>
               </div>
-
-              <p className="text-[10px] text-gray-300">
-                Guardado el {formatDate(selected.syncedAt)}
-              </p>
+              )}
             </div>
           </>
         )}
