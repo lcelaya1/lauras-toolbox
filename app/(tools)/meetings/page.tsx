@@ -490,7 +490,7 @@ export default function MeetingsPage() {
                           const res = await fetch(`/api/tasks/all-reminder-links?meetingId=${selected.id}`);
                           const { payload, count } = await res.json();
                           if (count === 0) return;
-                          const tasks = JSON.parse(payload) as { name: string; notes: string }[];
+                          const tasks = (JSON.parse(payload) as { tasks: { name: string; notes: string }[] }).tasks;
 
                           if (window.location.hostname === "localhost") {
                             // Local: osascript creates date-only reminders directly

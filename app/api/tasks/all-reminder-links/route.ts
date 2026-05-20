@@ -24,12 +24,12 @@ export async function GET(req: NextRequest) {
 
   const pending = meeting.tasks.filter((t) => !t.done);
 
-  const payload = JSON.stringify(
-    pending.map((task) => ({
+  const payload = JSON.stringify({
+    tasks: pending.map((task) => ({
       name:  `${task.category ?? "OPS"} - ${task.text}`,
       notes,
-    }))
-  );
+    })),
+  });
 
   return NextResponse.json({ payload, count: pending.length });
 }
