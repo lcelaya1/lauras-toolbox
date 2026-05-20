@@ -108,11 +108,28 @@ export default function MeetingsPage() {
   const [newDate, setNewDate] = useState("");
   const [newNotes, setNewNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [reminderStatus, setReminderStatus] = useState<string | null>(null);
 
   useEffect(() => {
     if (selectedId) localStorage.setItem("meetings_selected_id", selectedId);
     else localStorage.removeItem("meetings_selected_id");
   }, [selectedId]);
+
+  function showReminderStatus(msg: string) {
+    setReminderStatus(msg);
+    setTimeout(() => setReminderStatus(null), 3500);
+  }
+
+  async function openShortcut(name: string, payload: string) {
+    try {
+      await navigator.clipboard.writeText(payload);
+    } catch {
+      alert("No se pudo copiar al portapapeles. Asegúrate de dar permiso al navegador.");
+      return;
+    }
+    showReminderStatus("📋 Copiado — abriendo Shortcuts…");
+    window.open(`shortcuts://run-shortcut?name=${encodeURIComponent(name)}`, "_self");
+  }
 
   async function load(): Promise<string | null> {
     setLoading(true);
@@ -434,6 +451,13 @@ export default function MeetingsPage() {
               ))}
             </div>
 
+            {/* Reminder status toast */}
+            {reminderStatus && (
+              <div className="mx-8 mt-3 px-4 py-2.5 rounded-xl bg-green-50 border border-green-100 text-sm text-green-700 font-medium shrink-0">
+                {reminderStatus}
+              </div>
+            )}
+
             {/* Body */}
             <div className="flex-1 overflow-y-auto px-8 py-6 flex flex-col gap-6">
 
@@ -475,14 +499,15 @@ export default function MeetingsPage() {
                               headers: { "Content-Type": "application/json" },
                               body: JSON.stringify({ tasks }),
                             });
-                            if (!local.ok) {
+                            if (local.ok) {
+                              showReminderStatus(`✓ ${tasks.length} recordatorio${tasks.length !== 1 ? "s" : ""} añadido${tasks.length !== 1 ? "s" : ""}`);
+                            } else {
                               const err = await local.json().catch(() => ({}));
                               alert(`No se pudieron enviar a Reminders.\n\n${err.detail ?? err.error ?? "Error desconocido"}`);
                             }
                           } else {
                             // Vercel: clipboard → Shortcuts
-                            await navigator.clipboard.writeText(payload);
-                            window.location.href = `shortcuts://run-shortcut?name=A%C3%B1adir%20todas%20a%20Reminders`;
+                            await openShortcut("Añadir todas a Reminders", payload);
                           }
                         }}
                         className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-500 font-medium transition-colors"
@@ -550,14 +575,15 @@ export default function MeetingsPage() {
                                           headers: { "Content-Type": "application/json" },
                                           body: JSON.stringify({ name: parsed.name, notes: parsed.notes }),
                                         });
-                                        if (!local.ok) {
+                                        if (local.ok) {
+                                          showReminderStatus("✓ Recordatorio añadido");
+                                        } else {
                                           const err = await local.json().catch(() => ({}));
                                           alert(`No se pudo enviar a Reminders.\n\n${err.detail ?? err.error ?? "Error desconocido"}`);
                                         }
                                       } else {
                                         // Vercel: clipboard → Shortcuts
-                                        await navigator.clipboard.writeText(payload);
-                                        window.location.href = `shortcuts://run-shortcut?name=A%C3%B1adir%20a%20Reminders`;
+                                        await openShortcut("Añadir a Reminders", payload);
                                       }
                                     }}
                                     className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-orange-400 mt-0.5 shrink-0"
