@@ -291,6 +291,9 @@ export default function MeetingsPage() {
                   <p className="text-sm font-medium text-gray-800 truncate">{m.title}</p>
                   <p className="text-[10px] text-gray-400 mt-0.5">{formatDateShort(m.createdAt)}</p>
                 </div>
+                {m.tasks.some(t => !t.done) && (
+                  <span className="shrink-0 mt-1 w-2 h-2 rounded-full bg-indigo-400" title="Tiene tareas pendientes" />
+                )}
               </button>
             ))
           )}
