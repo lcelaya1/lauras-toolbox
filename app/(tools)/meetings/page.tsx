@@ -572,7 +572,7 @@ export default function MeetingsPage() {
                             </p>
                             <ul className="flex flex-col gap-1.5">
                               {grouped.get(cat)!.map(({ task, index: i }) => (
-                                <li key={i} className="group flex items-baseline gap-2.5">
+                                <li key={i} className="group flex items-center gap-2.5">
                                   <button
                                     onClick={() => handleToggleTask(selected.id, i)}
                                     className={`w-4 h-4 shrink-0 rounded border transition-colors flex items-center justify-center
