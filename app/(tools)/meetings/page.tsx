@@ -112,6 +112,7 @@ export default function MeetingsPage() {
   const [editingTask, setEditingTask] = useState<{ meetingId: string; index: number } | null>(null);
   const [editingTaskText, setEditingTaskText] = useState("");
   const cancelTaskEditRef = useRef(false);
+  const [categoryDropdown, setCategoryDropdown] = useState<{ meetingId: string; index: number } | null>(null);
 
   useEffect(() => {
     if (selectedId) localStorage.setItem("meetings_selected_id", selectedId);
@@ -252,6 +253,19 @@ export default function MeetingsPage() {
     const meeting = meetings.find((m) => m.id === meetingId);
     if (!meeting) return;
     const updated: Task[] = meeting.tasks.filter((_, i) => i !== index);
+    setMeetings((prev) => prev.map((m) => m.id === meetingId ? { ...m, tasks: updated } : m));
+    await fetch(`/api/meetings/${meetingId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tasks: updated }),
+    });
+  }
+
+  async function handleUpdateTaskCategory(meetingId: string, index: number, category: TaskCategory) {
+    setCategoryDropdown(null);
+    const meeting = meetings.find((m) => m.id === meetingId);
+    if (!meeting) return;
+    const updated: Task[] = meeting.tasks.map((t, i) => i === index ? { ...t, category } : t);
     setMeetings((prev) => prev.map((m) => m.id === meetingId ? { ...m, tasks: updated } : m));
     await fetch(`/api/meetings/${meetingId}`, {
       method: "PATCH",
@@ -589,13 +603,47 @@ export default function MeetingsPage() {
                                       />
                                     </span>
                                   ) : (
-                                    <span
-                                      onClick={() => { if (!task.done) { setEditingTask({ meetingId: selected.id, index: i }); setEditingTaskText(task.text); } }}
-                                      className={`flex-1 text-sm leading-snug ${task.done ? "line-through text-gray-400" : "text-gray-800 cursor-text hover:text-indigo-700"}`}
-                                    >
-                                      <span className="font-semibold text-gray-500">{cat} - </span>
-                                      {task.text}
-                                    </span>
+                                    <>
+                                      {/* Category label with dropdown */}
+                                      <span className="relative shrink-0">
+                                        {task.done ? (
+                                          <span className="text-sm font-semibold text-gray-400">{cat} —</span>
+                                        ) : (
+                                          <>
+                                            <button
+                                              onClick={(e) => { e.stopPropagation(); setCategoryDropdown(categoryDropdown?.index === i && categoryDropdown?.meetingId === selected.id ? null : { meetingId: selected.id, index: i }); }}
+                                              className="text-sm font-semibold text-gray-400 hover:text-indigo-500 transition-colors"
+                                            >
+                                              {cat} —
+                                            </button>
+                                            {categoryDropdown?.meetingId === selected.id && categoryDropdown?.index === i && (
+                                              <>
+                                                <div className="fixed inset-0 z-[5]" onClick={() => setCategoryDropdown(null)} />
+                                                <div className="absolute left-0 top-5 z-10 bg-white border border-gray-200 rounded-xl shadow-lg py-1 w-48">
+                                                  {CATEGORY_ORDER.map((c) => (
+                                                    <button
+                                                      key={c}
+                                                      onClick={() => handleUpdateTaskCategory(selected.id, i, c)}
+                                                      className={`w-full text-left px-3 py-1.5 text-xs transition-colors hover:bg-indigo-50
+                                                        ${c === (task.category ?? "OPS") ? "text-indigo-600 font-semibold" : "text-gray-700"}`}
+                                                    >
+                                                      <span className="font-semibold">{c}</span> — {CATEGORY_LABELS[c]}
+                                                    </button>
+                                                  ))}
+                                                </div>
+                                              </>
+                                            )}
+                                          </>
+                                        )}
+                                      </span>
+                                      {/* Task text */}
+                                      <span
+                                        onClick={() => { if (!task.done) { setEditingTask({ meetingId: selected.id, index: i }); setEditingTaskText(task.text); } }}
+                                        className={`flex-1 text-sm leading-snug ${task.done ? "line-through text-gray-400" : "text-gray-800 cursor-text hover:text-indigo-700"}`}
+                                      >
+                                        {task.text}
+                                      </span>
+                                    </>
                                   )}
                                   {!task.done && <button
                                     onClick={async () => {
