@@ -200,6 +200,18 @@ export default function MeetingsPage() {
     });
   }
 
+  async function handleDeleteTask(meetingId: string, index: number) {
+    const meeting = meetings.find((m) => m.id === meetingId);
+    if (!meeting) return;
+    const updated: Task[] = meeting.tasks.filter((_, i) => i !== index);
+    setMeetings((prev) => prev.map((m) => m.id === meetingId ? { ...m, tasks: updated } : m));
+    await fetch(`/api/meetings/${meetingId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tasks: updated }),
+    });
+  }
+
   const selected = meetings.find((m) => m.id === selectedId) ?? null;
 
   // Parse attendees from rawJson
@@ -418,7 +430,7 @@ export default function MeetingsPage() {
                   ) : (
                     <ul className="flex flex-col gap-1.5">
                       {selected.tasks.map((task, i) => (
-                        <li key={i} className="flex items-start gap-2.5">
+                        <li key={i} className="group flex items-start gap-2.5">
                           <button
                             onClick={() => handleToggleTask(selected.id, i)}
                             className={`mt-0.5 w-4 h-4 shrink-0 rounded border transition-colors flex items-center justify-center
@@ -432,9 +444,18 @@ export default function MeetingsPage() {
                               </svg>
                             )}
                           </button>
-                          <span className={`text-sm leading-snug ${task.done ? "line-through text-gray-400" : "text-gray-800"}`}>
+                          <span className={`flex-1 text-sm leading-snug ${task.done ? "line-through text-gray-400" : "text-gray-800"}`}>
                             {task.text}
                           </span>
+                          <button
+                            onClick={() => handleDeleteTask(selected.id, i)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-red-400 mt-0.5 shrink-0"
+                            title="Eliminar tarea"
+                          >
+                            <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                              <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
+                            </svg>
+                          </button>
                         </li>
                       ))}
                     </ul>
