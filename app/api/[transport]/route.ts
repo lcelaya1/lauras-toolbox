@@ -1,6 +1,6 @@
 import { createMcpHandler } from "mcp-handler";
 import { z } from "zod";
-import { listMeetings } from "@/lib/meetings-store";
+import { listMeetings, updateTasks } from "@/lib/meetings-store";
 import { listRecordings } from "@/lib/blob-store";
 
 export const maxDuration = 60;
@@ -102,6 +102,33 @@ const handler = createMcpHandler(
             text: results.length > 0
               ? JSON.stringify(results, null, 2)
               : `No meetings found matching "${query}".`,
+          }],
+        };
+      },
+    );
+
+    server.registerTool(
+      "save_tasks",
+      {
+        title: "Save Tasks",
+        description: "Save a list of tasks extracted from a meeting back into the app. Tasks will appear as a checklist in the meeting detail view.",
+        inputSchema: {
+          meetingId: z.string().describe("Meeting ID from list_meetings or get_meeting"),
+          tasks: z.array(z.string()).describe("List of task descriptions assigned to Laura"),
+        },
+      },
+      async ({ meetingId, tasks }) => {
+        const { meetings } = await listMeetings();
+        const meeting = meetings.find((m) => m.id === meetingId);
+        if (!meeting) {
+          return { content: [{ type: "text" as const, text: `Meeting ${meetingId} not found.` }], isError: true };
+        }
+        const taskObjects = tasks.map((text) => ({ text, done: false }));
+        await updateTasks(meetingId, taskObjects);
+        return {
+          content: [{
+            type: "text" as const,
+            text: `✓ Saved ${tasks.length} task${tasks.length !== 1 ? "s" : ""} to "${meeting.title}".`,
           }],
         };
       },

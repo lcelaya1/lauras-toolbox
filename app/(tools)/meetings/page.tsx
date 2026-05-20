@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { MeetingMeta } from "@/lib/meetings-store";
+import type { MeetingMeta, Task } from "@/lib/meetings-store";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString("es-ES", {
@@ -185,6 +185,18 @@ export default function MeetingsPage() {
     setConfirming(null);
     if (selectedId === id) setSelectedId(null);
     await load();
+  }
+
+  async function handleToggleTask(meetingId: string, index: number) {
+    const meeting = meetings.find((m) => m.id === meetingId);
+    if (!meeting) return;
+    const updated: Task[] = meeting.tasks.map((t, i) => i === index ? { ...t, done: !t.done } : t);
+    setMeetings((prev) => prev.map((m) => m.id === meetingId ? { ...m, tasks: updated } : m));
+    await fetch(`/api/meetings/${meetingId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tasks: updated }),
+    });
   }
 
   const selected = meetings.find((m) => m.id === selectedId) ?? null;
@@ -374,6 +386,37 @@ export default function MeetingsPage() {
                       </span>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {/* Tasks */}
+              {selected.tasks.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+                    Tareas asignadas
+                  </p>
+                  <ul className="flex flex-col gap-1.5">
+                    {selected.tasks.map((task, i) => (
+                      <li key={i} className="flex items-start gap-2.5">
+                        <button
+                          onClick={() => handleToggleTask(selected.id, i)}
+                          className={`mt-0.5 w-4 h-4 shrink-0 rounded border transition-colors flex items-center justify-center
+                            ${task.done
+                              ? "bg-indigo-600 border-indigo-600"
+                              : "border-gray-300 hover:border-indigo-400 bg-white"}`}
+                        >
+                          {task.done && (
+                            <svg viewBox="0 0 12 12" fill="none" className="w-2.5 h-2.5">
+                              <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          )}
+                        </button>
+                        <span className={`text-sm leading-snug ${task.done ? "line-through text-gray-400" : "text-gray-800"}`}>
+                          {task.text}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
 

@@ -1,5 +1,10 @@
 import { createClient } from "@libsql/client";
 
+export interface Task {
+  text: string;
+  done: boolean;
+}
+
 export interface MeetingMeta {
   id: string;
   granolaId: string;
@@ -8,6 +13,7 @@ export interface MeetingMeta {
   summaryMarkdown: string;
   transcriptJson: string;
   sessionNotes: string; // raw notes taken during the session (manually pasted)
+  tasks: Task[];        // tasks extracted by Claude
   createdAt: string;
   syncedAt: string;
   rawJson: string;
@@ -43,6 +49,7 @@ export async function initDb(): Promise<void> {
   for (const col of [
     "ALTER TABLE meetings ADD COLUMN transcript_json TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE meetings ADD COLUMN session_notes TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE meetings ADD COLUMN tasks TEXT NOT NULL DEFAULT '[]'",
   ]) {
     try { await client.execute(col); } catch { /* already exists */ }
   }
@@ -57,18 +64,23 @@ export async function listMeetings(): Promise<{ meetings: MeetingMeta[]; lastSyn
     client.execute("SELECT value FROM meta WHERE key = 'last_synced_at'"),
   ]);
 
-  const meetings: MeetingMeta[] = meetingsResult.rows.map((r) => ({
-    id: r.id as string,
-    granolaId: r.granola_id as string,
-    title: r.title as string,
-    summary: r.summary as string,
-    summaryMarkdown: r.summary_markdown as string,
-    transcriptJson: (r.transcript_json as string) ?? "",
-    sessionNotes: (r.session_notes as string) ?? "",
-    createdAt: r.created_at as string,
-    syncedAt: r.synced_at as string,
-    rawJson: r.raw_json as string,
-  }));
+  const meetings: MeetingMeta[] = meetingsResult.rows.map((r) => {
+    let tasks: Task[] = [];
+    try { tasks = JSON.parse((r.tasks as string) || "[]"); } catch { /* ignore */ }
+    return {
+      id: r.id as string,
+      granolaId: r.granola_id as string,
+      title: r.title as string,
+      summary: r.summary as string,
+      summaryMarkdown: r.summary_markdown as string,
+      transcriptJson: (r.transcript_json as string) ?? "",
+      sessionNotes: (r.session_notes as string) ?? "",
+      tasks,
+      createdAt: r.created_at as string,
+      syncedAt: r.synced_at as string,
+      rawJson: r.raw_json as string,
+    };
+  });
 
   const lastSyncedAt = (metaResult.rows[0]?.value as string | null) ?? null;
   return { meetings, lastSyncedAt };
@@ -145,6 +157,7 @@ export async function createMeeting(data: { title: string; createdAt: string; su
     summaryMarkdown: data.summaryMarkdown,
     transcriptJson: "",
     sessionNotes: "",
+    tasks: [],
     createdAt: data.createdAt,
     syncedAt,
     rawJson: "{}",
@@ -178,4 +191,17 @@ export async function updateTranscript(id: string, transcript: string): Promise<
 export async function removeMeeting(id: string): Promise<void> {
   const client = db();
   await client.execute({ sql: "DELETE FROM meetings WHERE id = ?", args: [id] });
+}
+
+export async function updateTasks(id: string, tasks: Task[]): Promise<void> {
+  const client = db();
+  await client.execute({
+    sql: "UPDATE meetings SET tasks = ? WHERE id = ?",
+    args: [JSON.stringify(tasks), id],
+  });
+}
+
+export async function getMeeting(id: string): Promise<MeetingMeta | null> {
+  const { meetings } = await listMeetings();
+  return meetings.find((m) => m.id === id) ?? null;
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { removeMeeting, updateTranscript, updateSessionNotes, updateNotes } from "@/lib/meetings-store";
+import { removeMeeting, updateTranscript, updateSessionNotes, updateNotes, updateTasks } from "@/lib/meetings-store";
 
 export async function PATCH(
   req: NextRequest,
@@ -17,6 +17,10 @@ export async function PATCH(
   }
   if (typeof body.summaryMarkdown === "string") {
     await updateNotes(id, body.summaryMarkdown);
+    return NextResponse.json({ ok: true });
+  }
+  if (Array.isArray(body.tasks)) {
+    await updateTasks(id, body.tasks);
     return NextResponse.json({ ok: true });
   }
   return NextResponse.json({ error: "Invalid body" }, { status: 400 });

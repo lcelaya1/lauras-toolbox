@@ -75,6 +75,7 @@ export async function POST(req: NextRequest) {
     summaryMarkdown: (note.summary_markdown as string) ?? "",
     transcriptJson: note.transcript ? JSON.stringify(note.transcript) : "",
     sessionNotes: "",
+    tasks: [],
     createdAt: (note.created_at as string) ?? new Date().toISOString(),
     rawJson: JSON.stringify(note),
   }));
