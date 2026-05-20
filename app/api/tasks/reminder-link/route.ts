@@ -1,24 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
+import { listMeetings } from "@/lib/meetings-store";
 
 // GET /api/tasks/reminder-link?taskId=X&meetingId=Y&name=TASK_NAME
-// Returns the full shortcuts:// URL with the secret embedded server-side.
-// This keeps TASKS_SECRET out of the client bundle.
+// Returns a JSON payload {name, notes} where notes is the meeting title + date.
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const taskId   = searchParams.get("taskId");
+  const taskId    = searchParams.get("taskId");
   const meetingId = searchParams.get("meetingId");
-  const name     = searchParams.get("name") ?? "";
+  const name      = searchParams.get("name") ?? "";
 
   if (!taskId || !meetingId) {
     return NextResponse.json({ error: "Missing parameters" }, { status: 400 });
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  const secret = process.env.TASKS_SECRET ?? "";
+  const { meetings } = await listMeetings();
+  const meeting = meetings.find((m) => m.id === meetingId);
 
-  const completeUrl = `${appUrl}/api/tasks/complete?taskId=${taskId}&meetingId=${meetingId}&token=${secret}`;
+  const meetingTitle = meeting?.title ?? "";
+  const meetingDate  = meeting
+    ? new Date(meeting.createdAt).toLocaleDateString("es-ES", {
+        day: "numeric", month: "long", year: "numeric",
+      })
+    : "";
 
-  const payload = JSON.stringify({ name, notes: completeUrl });
+  const notes   = meetingTitle ? `${meetingTitle} · ${meetingDate}` : meetingDate;
+  const payload = JSON.stringify({ name, notes });
 
   return NextResponse.json({ payload });
 }
