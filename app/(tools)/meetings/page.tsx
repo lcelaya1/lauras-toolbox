@@ -119,7 +119,23 @@ export default function MeetingsPage() {
     try {
       const res = await fetch("/api/meetings");
       const data = await res.json();
-      setMeetings(data.meetings ?? []);
+      const meetings: MeetingMeta[] = data.meetings ?? [];
+
+      // Backfill missing task IDs (tasks saved before the id field was added)
+      for (const m of meetings) {
+        const missing = m.tasks.some((t) => !t.id);
+        if (missing) {
+          const fixed = m.tasks.map((t) => ({ ...t, id: t.id || crypto.randomUUID() }));
+          await fetch(`/api/meetings/${m.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tasks: fixed }),
+          });
+          m.tasks = fixed;
+        }
+      }
+
+      setMeetings(meetings);
       setLastSyncedAt(data.lastSyncedAt ?? null);
       return data.lastSyncedAt ?? null;
     } catch {
