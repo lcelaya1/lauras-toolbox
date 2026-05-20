@@ -587,14 +587,6 @@ export default function MeetingsPage() {
                                         }}
                                         className="flex-1 min-w-0 text-sm text-gray-800 border-b border-indigo-400 outline-none bg-transparent py-0.5"
                                       />
-                                      <button
-                                        onMouseDown={(e) => { e.preventDefault(); handleSaveTaskEdit(selected.id, i); }}
-                                        className="shrink-0 text-indigo-500 hover:text-indigo-700 text-xs font-semibold"
-                                      >✓</button>
-                                      <button
-                                        onMouseDown={(e) => { e.preventDefault(); cancelTaskEditRef.current = true; setEditingTask(null); }}
-                                        className="shrink-0 text-gray-400 hover:text-gray-600 text-xs"
-                                      >✕</button>
                                     </span>
                                   ) : (
                                     <span
