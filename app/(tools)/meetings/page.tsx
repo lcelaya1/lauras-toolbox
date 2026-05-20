@@ -114,6 +114,10 @@ export default function MeetingsPage() {
   const [editingTaskText, setEditingTaskText] = useState("");
   const cancelTaskEditRef = useRef(false);
   const [categoryDropdown, setCategoryDropdown] = useState<{ meetingId: string; index: number } | null>(null);
+  const [addingTask, setAddingTask] = useState(false);
+  const [newTaskText, setNewTaskText] = useState("");
+  const [newTaskCategory, setNewTaskCategory] = useState<TaskCategory>("OPS");
+  const [showCategoryPickerForNew, setShowCategoryPickerForNew] = useState(false);
 
   useEffect(() => {
     if (selectedId) localStorage.setItem("meetings_selected_id", selectedId);
@@ -275,6 +279,21 @@ export default function MeetingsPage() {
     });
   }
 
+  async function handleAddTask() {
+    const text = newTaskText.trim();
+    if (!text || !selected) return;
+    setAddingTask(false);
+    setNewTaskText("");
+    const newTask: Task = { id: crypto.randomUUID(), text, done: false, category: newTaskCategory };
+    const updated = [...selected.tasks, newTask];
+    setMeetings((prev) => prev.map((m) => m.id === selected.id ? { ...m, tasks: updated } : m));
+    await fetch(`/api/meetings/${selected.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tasks: updated }),
+    });
+  }
+
   async function handleSaveTaskEdit(meetingId: string, index: number) {
     const text = editingTaskText.trim();
     setEditingTask(null);
@@ -346,7 +365,7 @@ export default function MeetingsPage() {
             meetings.map((m) => (
               <button
                 key={m.id}
-                onClick={() => { setSelectedId(m.id); setConfirming(null); setEditingNotes(false); setAdding(false); setActiveTab("tareas"); }}
+                onClick={() => { setSelectedId(m.id); setConfirming(null); setEditingNotes(false); setAdding(false); setActiveTab("tareas"); setAddingTask(false); setNewTaskText(""); }}
                 className={`w-full text-left px-4 py-3 flex items-start gap-3 transition-colors
                   ${selectedId === m.id ? "bg-indigo-50 border-r-2 border-indigo-500" : "hover:bg-gray-100"}`}
               >
@@ -707,6 +726,62 @@ export default function MeetingsPage() {
                     );
                   })()}
                   </>
+                  )}
+
+                  {/* Add task */}
+                  {addingTask ? (
+                    <div className="flex items-start gap-2.5 mt-3">
+                      <div className="mt-[4px] w-4 h-4 shrink-0 rounded border border-gray-200" />
+                      <span className="relative shrink-0">
+                        <button
+                          onClick={() => setShowCategoryPickerForNew(!showCategoryPickerForNew)}
+                          className="text-sm font-semibold text-gray-400 hover:text-indigo-500 transition-colors"
+                        >
+                          {newTaskCategory} —
+                        </button>
+                        {showCategoryPickerForNew && (
+                          <>
+                            <div className="fixed inset-0 z-[5]" onClick={() => setShowCategoryPickerForNew(false)} />
+                            <div className="absolute left-0 top-5 z-10 bg-white border border-gray-200 rounded-xl shadow-lg py-1 w-48">
+                              {CATEGORY_ORDER.map((c) => (
+                                <button
+                                  key={c}
+                                  onClick={() => { setNewTaskCategory(c); setShowCategoryPickerForNew(false); }}
+                                  className={`w-full text-left px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-indigo-50
+                                    ${c === newTaskCategory ? "text-indigo-600" : "text-gray-600"}`}
+                                >
+                                  {c}
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </span>
+                      <textarea
+                        autoFocus
+                        rows={1}
+                        value={newTaskText}
+                        ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
+                        onChange={(e) => { setNewTaskText(e.target.value); e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAddTask(); }
+                          if (e.key === "Escape") { setAddingTask(false); setNewTaskText(""); }
+                        }}
+                        onBlur={() => { if (newTaskText.trim()) handleAddTask(); else setAddingTask(false); }}
+                        placeholder="Nueva tarea…"
+                        className="flex-1 min-w-0 text-sm text-gray-800 border-b border-indigo-400 outline-none bg-transparent py-0.5 resize-none overflow-hidden leading-snug placeholder:text-gray-300 mt-[2px]"
+                      />
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setAddingTask(true)}
+                      className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-indigo-500 transition-colors mt-3"
+                    >
+                      <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                        <path d="M8.75 3.75a.75.75 0 00-1.5 0v3.5h-3.5a.75.75 0 000 1.5h3.5v3.5a.75.75 0 001.5 0v-3.5h3.5a.75.75 0 000-1.5h-3.5v-3.5z" />
+                      </svg>
+                      Añadir tarea
+                    </button>
                   )}
                 </div>
               )}
