@@ -647,7 +647,7 @@ export default function MeetingsPage() {
                                       {/* Task text */}
                                       <span
                                         onClick={() => { if (!task.done) { setEditingTask({ meetingId: selected.id, index: i }); setEditingTaskText(task.text); } }}
-                                        className={`flex-1 text-sm leading-snug ${task.done ? "line-through text-gray-400" : "text-gray-800 cursor-text hover:text-indigo-700"}`}
+                                        className={`flex-1 text-sm leading-snug mt-[2px] ${task.done ? "line-through text-gray-400" : "text-gray-800 cursor-text hover:text-indigo-700"}`}
                                       >
                                         {task.text}
                                       </span>
