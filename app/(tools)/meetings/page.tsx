@@ -442,7 +442,26 @@ export default function MeetingsPage() {
                     <p className="text-sm text-gray-400 italic">
                       No hay tareas todavía. Pídele a Claude que extraiga las tareas de esta reunión.
                     </p>
-                  ) : (() => {
+                  ) : (<>
+                  {selected.tasks.some(t => !t.done) && (
+                    <div className="mb-4">
+                      <button
+                        onClick={async () => {
+                          const res = await fetch(`/api/tasks/all-reminder-links?meetingId=${selected.id}`);
+                          const { shortcutUrl, count } = await res.json();
+                          if (count === 0) return;
+                          window.location.href = shortcutUrl;
+                        }}
+                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-500 font-medium transition-colors"
+                      >
+                        <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                          <path fillRule="evenodd" d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1ZM0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm9 1V5.5a1 1 0 0 0-2 0v4a1 1 0 0 0 .553.894l2.5 1.25a1 1 0 0 0 .894-1.788L9 9Z" clipRule="evenodd"/>
+                        </svg>
+                        Enviar todas a Reminders ({selected.tasks.filter(t => !t.done).length})
+                      </button>
+                    </div>
+                  )}
+                  {(() => {
                     const grouped = new Map<string, { task: Task; index: number }[]>();
                     selected.tasks.forEach((task, i) => {
                       const cat = task.category ?? "OPS";
@@ -515,6 +534,8 @@ export default function MeetingsPage() {
                       </div>
                     );
                   })()}
+                  </>
+                  )}
                 </div>
               )}
 
