@@ -571,17 +571,26 @@ export default function MeetingsPage() {
                                     )}
                                   </button>
                                   {editingTask?.meetingId === selected.id && editingTask?.index === i ? (
-                                    <input
-                                      autoFocus
-                                      value={editingTaskText}
-                                      onChange={(e) => setEditingTaskText(e.target.value)}
-                                      onBlur={() => handleSaveTaskEdit(selected.id, i)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Enter") handleSaveTaskEdit(selected.id, i);
-                                        if (e.key === "Escape") setEditingTask(null);
-                                      }}
-                                      className="flex-1 text-sm text-gray-800 border-b border-indigo-400 outline-none bg-transparent py-0.5"
-                                    />
+                                    <span className="flex-1 flex items-center gap-1.5 min-w-0">
+                                      <input
+                                        autoFocus
+                                        value={editingTaskText}
+                                        onChange={(e) => setEditingTaskText(e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter") handleSaveTaskEdit(selected.id, i);
+                                          if (e.key === "Escape") setEditingTask(null);
+                                        }}
+                                        className="flex-1 min-w-0 text-sm text-gray-800 border-b border-indigo-400 outline-none bg-transparent py-0.5"
+                                      />
+                                      <button
+                                        onMouseDown={(e) => { e.preventDefault(); handleSaveTaskEdit(selected.id, i); }}
+                                        className="shrink-0 text-indigo-500 hover:text-indigo-700 text-xs font-semibold"
+                                      >✓</button>
+                                      <button
+                                        onMouseDown={(e) => { e.preventDefault(); setEditingTask(null); }}
+                                        className="shrink-0 text-gray-400 hover:text-gray-600 text-xs"
+                                      >✕</button>
+                                    </span>
                                   ) : (
                                     <span
                                       onClick={() => { if (!task.done) { setEditingTask({ meetingId: selected.id, index: i }); setEditingTaskText(task.text); } }}
