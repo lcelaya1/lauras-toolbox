@@ -588,19 +588,25 @@ export default function MeetingsPage() {
                                   </button>
                                   {editingTask?.meetingId === selected.id && editingTask?.index === i ? (
                                     <span className="flex-1 flex items-center gap-1.5 min-w-0">
-                                      <input
+                                      <textarea
                                         autoFocus
+                                        rows={1}
                                         value={editingTaskText}
-                                        onChange={(e) => setEditingTaskText(e.target.value)}
+                                        ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
+                                        onChange={(e) => {
+                                          setEditingTaskText(e.target.value);
+                                          e.target.style.height = "auto";
+                                          e.target.style.height = e.target.scrollHeight + "px";
+                                        }}
                                         onKeyDown={(e) => {
-                                          if (e.key === "Enter") handleSaveTaskEdit(selected.id, i);
+                                          if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSaveTaskEdit(selected.id, i); }
                                           if (e.key === "Escape") { cancelTaskEditRef.current = true; setEditingTask(null); }
                                         }}
                                         onBlur={() => {
                                           if (cancelTaskEditRef.current) { cancelTaskEditRef.current = false; return; }
                                           handleSaveTaskEdit(selected.id, i);
                                         }}
-                                        className="flex-1 min-w-0 text-sm text-gray-800 border-b border-indigo-400 outline-none bg-transparent py-0.5"
+                                        className="flex-1 min-w-0 text-sm text-gray-800 border-b border-indigo-400 outline-none bg-transparent py-0.5 resize-none overflow-hidden leading-snug"
                                       />
                                     </span>
                                   ) : (
