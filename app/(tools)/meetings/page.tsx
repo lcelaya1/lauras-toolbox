@@ -109,6 +109,8 @@ export default function MeetingsPage() {
   const [newNotes, setNewNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [reminderStatus, setReminderStatus] = useState<string | null>(null);
+  const [editingTask, setEditingTask] = useState<{ meetingId: string; index: number } | null>(null);
+  const [editingTaskText, setEditingTaskText] = useState("");
 
   useEffect(() => {
     if (selectedId) localStorage.setItem("meetings_selected_id", selectedId);
@@ -249,6 +251,21 @@ export default function MeetingsPage() {
     const meeting = meetings.find((m) => m.id === meetingId);
     if (!meeting) return;
     const updated: Task[] = meeting.tasks.filter((_, i) => i !== index);
+    setMeetings((prev) => prev.map((m) => m.id === meetingId ? { ...m, tasks: updated } : m));
+    await fetch(`/api/meetings/${meetingId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tasks: updated }),
+    });
+  }
+
+  async function handleSaveTaskEdit(meetingId: string, index: number) {
+    const text = editingTaskText.trim();
+    setEditingTask(null);
+    if (!text) return;
+    const meeting = meetings.find((m) => m.id === meetingId);
+    if (!meeting) return;
+    const updated: Task[] = meeting.tasks.map((t, i) => i === index ? { ...t, text } : t);
     setMeetings((prev) => prev.map((m) => m.id === meetingId ? { ...m, tasks: updated } : m));
     await fetch(`/api/meetings/${meetingId}`, {
       method: "PATCH",
@@ -553,10 +570,27 @@ export default function MeetingsPage() {
                                       </svg>
                                     )}
                                   </button>
-                                  <span className={`flex-1 text-sm leading-snug ${task.done ? "line-through text-gray-400" : "text-gray-800"}`}>
-                                    <span className="font-semibold text-gray-500">{cat} - </span>
-                                    {task.text}
-                                  </span>
+                                  {editingTask?.meetingId === selected.id && editingTask?.index === i ? (
+                                    <input
+                                      autoFocus
+                                      value={editingTaskText}
+                                      onChange={(e) => setEditingTaskText(e.target.value)}
+                                      onBlur={() => handleSaveTaskEdit(selected.id, i)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") handleSaveTaskEdit(selected.id, i);
+                                        if (e.key === "Escape") setEditingTask(null);
+                                      }}
+                                      className="flex-1 text-sm text-gray-800 border-b border-indigo-400 outline-none bg-transparent py-0.5"
+                                    />
+                                  ) : (
+                                    <span
+                                      onClick={() => { if (!task.done) { setEditingTask({ meetingId: selected.id, index: i }); setEditingTaskText(task.text); } }}
+                                      className={`flex-1 text-sm leading-snug ${task.done ? "line-through text-gray-400" : "text-gray-800 cursor-text hover:text-indigo-700"}`}
+                                    >
+                                      <span className="font-semibold text-gray-500">{cat} - </span>
+                                      {task.text}
+                                    </span>
+                                  )}
                                   {!task.done && <button
                                     onClick={async () => {
                                       const params = new URLSearchParams({
