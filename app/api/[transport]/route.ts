@@ -135,7 +135,7 @@ Tasks will appear grouped by category in the meeting detail view.`,
         if (!meeting) {
           return { content: [{ type: "text" as const, text: `Meeting ${meetingId} not found.` }], isError: true };
         }
-        const taskObjects = tasks.map(({ text, category }) => ({ text, done: false, category }));
+        const taskObjects = tasks.map(({ text, category }) => ({ id: crypto.randomUUID(), text, done: false, category }));
         await updateTasks(meetingId, taskObjects);
         return {
           content: [{

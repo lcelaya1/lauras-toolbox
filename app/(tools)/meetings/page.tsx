@@ -480,15 +480,24 @@ export default function MeetingsPage() {
                                     <span className="font-semibold text-gray-500">{cat} - </span>
                                     {task.text}
                                   </span>
-                                  <a
-                                    href={`shortcuts://run-shortcut?name=A%C3%B1adir%20a%20Reminders&input=text&text=${encodeURIComponent(`${cat} - ${task.text}`)}`}
+                                  <button
+                                    onClick={async () => {
+                                      const params = new URLSearchParams({
+                                        taskId: task.id,
+                                        meetingId: selected.id,
+                                        name: `${cat} - ${task.text}`,
+                                      });
+                                      const res = await fetch(`/api/tasks/reminder-link?${params}`);
+                                      const { shortcutUrl } = await res.json();
+                                      window.location.href = shortcutUrl;
+                                    }}
                                     className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-orange-400 mt-0.5 shrink-0"
                                     title="Enviar a Reminders"
                                   >
                                     <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                                       <path fillRule="evenodd" d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1ZM0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm9 1V5.5a1 1 0 0 0-2 0v4a1 1 0 0 0 .553.894l2.5 1.25a1 1 0 0 0 .894-1.788L9 9Z" clipRule="evenodd"/>
                                     </svg>
-                                  </a>
+                                  </button>
                                   <button
                                     onClick={() => handleDeleteTask(selected.id, i)}
                                     className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-red-400 mt-0.5 shrink-0"

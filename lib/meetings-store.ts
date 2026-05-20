@@ -3,6 +3,7 @@ import { createClient } from "@libsql/client";
 export type TaskCategory = "FG" | "COPSUP" | "VEN" | "4o" | "WF" | "OPS" | "PFGs";
 
 export interface Task {
+  id: string;       // stable UUID so Reminders can reference back
   text: string;
   done: boolean;
   category?: TaskCategory;
@@ -198,9 +199,11 @@ export async function removeMeeting(id: string): Promise<void> {
 
 export async function updateTasks(id: string, tasks: Task[]): Promise<void> {
   const client = db();
+  // Ensure every task has a stable UUID
+  const withIds = tasks.map((t) => ({ ...t, id: t.id || crypto.randomUUID() }));
   await client.execute({
     sql: "UPDATE meetings SET tasks = ? WHERE id = ?",
-    args: [JSON.stringify(tasks), id],
+    args: [JSON.stringify(withIds), id],
   });
 }
 
