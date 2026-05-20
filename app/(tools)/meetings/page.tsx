@@ -468,15 +468,21 @@ export default function MeetingsPage() {
                           if (count === 0) return;
                           const tasks = JSON.parse(payload) as { name: string; notes: string }[];
 
-                          // Try osascript (local macOS, creates date-only reminders)
-                          const local = await fetch("/api/tasks/send-to-reminders", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ tasks }),
-                          });
-                          if (!local.ok) {
-                            const err = await local.json().catch(() => ({}));
-                            alert(`No se pudieron enviar a Reminders.\n\n${err.detail ?? err.error ?? "Error desconocido"}\n\nAsegúrate de que la app está corriendo en local (localhost).`);
+                          if (window.location.hostname === "localhost") {
+                            // Local: osascript creates date-only reminders directly
+                            const local = await fetch("/api/tasks/send-to-reminders", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ tasks }),
+                            });
+                            if (!local.ok) {
+                              const err = await local.json().catch(() => ({}));
+                              alert(`No se pudieron enviar a Reminders.\n\n${err.detail ?? err.error ?? "Error desconocido"}`);
+                            }
+                          } else {
+                            // Vercel: clipboard → Shortcuts
+                            await navigator.clipboard.writeText(payload);
+                            window.location.href = `shortcuts://run-shortcut?name=A%C3%B1adir%20todas%20a%20Reminders`;
                           }
                         }}
                         className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-500 font-medium transition-colors"
@@ -537,15 +543,21 @@ export default function MeetingsPage() {
                                       const { payload } = await linkRes.json();
                                       const parsed = JSON.parse(payload);
 
-                                      // Try osascript (local macOS, creates date-only reminder)
-                                      const local = await fetch("/api/tasks/send-to-reminders", {
-                                        method: "POST",
-                                        headers: { "Content-Type": "application/json" },
-                                        body: JSON.stringify({ name: parsed.name, notes: parsed.notes }),
-                                      });
-                                      if (!local.ok) {
-                                        const err = await local.json().catch(() => ({}));
-                                        alert(`No se pudo enviar a Reminders.\n\n${err.detail ?? err.error ?? "Error desconocido"}\n\nAsegúrate de que la app está corriendo en local (localhost).`);
+                                      if (window.location.hostname === "localhost") {
+                                        // Local: osascript creates date-only reminder directly
+                                        const local = await fetch("/api/tasks/send-to-reminders", {
+                                          method: "POST",
+                                          headers: { "Content-Type": "application/json" },
+                                          body: JSON.stringify({ name: parsed.name, notes: parsed.notes }),
+                                        });
+                                        if (!local.ok) {
+                                          const err = await local.json().catch(() => ({}));
+                                          alert(`No se pudo enviar a Reminders.\n\n${err.detail ?? err.error ?? "Error desconocido"}`);
+                                        }
+                                      } else {
+                                        // Vercel: clipboard → Shortcuts
+                                        await navigator.clipboard.writeText(payload);
+                                        window.location.href = `shortcuts://run-shortcut?name=A%C3%B1adir%20a%20Reminders`;
                                       }
                                     }}
                                     className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-orange-400 mt-0.5 shrink-0"
