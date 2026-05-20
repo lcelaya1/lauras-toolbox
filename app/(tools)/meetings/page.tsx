@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MeetingMeta, Task, TaskCategory } from "@/lib/meetings-store";
 
 const CATEGORY_LABELS: Record<TaskCategory, string> = {
@@ -111,6 +111,7 @@ export default function MeetingsPage() {
   const [reminderStatus, setReminderStatus] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<{ meetingId: string; index: number } | null>(null);
   const [editingTaskText, setEditingTaskText] = useState("");
+  const cancelTaskEditRef = useRef(false);
 
   useEffect(() => {
     if (selectedId) localStorage.setItem("meetings_selected_id", selectedId);
@@ -578,7 +579,11 @@ export default function MeetingsPage() {
                                         onChange={(e) => setEditingTaskText(e.target.value)}
                                         onKeyDown={(e) => {
                                           if (e.key === "Enter") handleSaveTaskEdit(selected.id, i);
-                                          if (e.key === "Escape") setEditingTask(null);
+                                          if (e.key === "Escape") { cancelTaskEditRef.current = true; setEditingTask(null); }
+                                        }}
+                                        onBlur={() => {
+                                          if (cancelTaskEditRef.current) { cancelTaskEditRef.current = false; return; }
+                                          handleSaveTaskEdit(selected.id, i);
                                         }}
                                         className="flex-1 min-w-0 text-sm text-gray-800 border-b border-indigo-400 outline-none bg-transparent py-0.5"
                                       />
@@ -587,7 +592,7 @@ export default function MeetingsPage() {
                                         className="shrink-0 text-indigo-500 hover:text-indigo-700 text-xs font-semibold"
                                       >✓</button>
                                       <button
-                                        onMouseDown={(e) => { e.preventDefault(); setEditingTask(null); }}
+                                        onMouseDown={(e) => { e.preventDefault(); cancelTaskEditRef.current = true; setEditingTask(null); }}
                                         className="shrink-0 text-gray-400 hover:text-gray-600 text-xs"
                                       >✕</button>
                                     </span>
