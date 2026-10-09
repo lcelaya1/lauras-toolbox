@@ -1,4 +1,6 @@
-import { createMcpHandler } from "mcp-handler";
+import { createMcpHandler, withMcpAuth } from "mcp-handler";
+import { MCP_SCOPE, mcpResource } from "@/lib/auth/config";
+import { verifyAccessToken } from "@/lib/auth/store";
 import { z } from "zod";
 import { listMeetings, updateTasks } from "@/lib/meetings-store";
 import { listRecordings } from "@/lib/blob-store";
@@ -204,4 +206,23 @@ Tasks will appear grouped by category in the meeting detail view.`,
   },
 );
 
-export { handler as GET, handler as POST };
+// Every MCP request needs a bearer token issued by this app's OAuth server (/oauth/*),
+// obtained by signing in with an allowed Google account.
+const authHandler = withMcpAuth(
+  handler,
+  async (req, bearerToken) => {
+    if (!bearerToken) return undefined;
+    const token = await verifyAccessToken(bearerToken, mcpResource(req));
+    if (!token) return undefined;
+    return {
+      token: bearerToken,
+      clientId: token.clientId,
+      scopes: [MCP_SCOPE],
+      expiresAt: token.expiresAt,
+      extra: { email: token.email },
+    };
+  },
+  { required: true, resourceMetadataPath: "/.well-known/oauth-protected-resource/api/mcp", resourceUrl: process.env.APP_URL },
+);
+
+export { authHandler as GET, authHandler as POST, authHandler as DELETE };
