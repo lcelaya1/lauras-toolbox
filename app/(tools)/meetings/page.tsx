@@ -36,6 +36,17 @@ function summaryPreview(text: string, maxLen = 80) {
 }
 
 // Renders Granola's markdown (### headings, - bullets, nested bullets)
+// Inline markdown: **bold** and backslash escapes (e.g. "\~100"). Rendered as React text, never as HTML.
+function inline(text: string): React.ReactNode {
+  const unescaped = text.replace(/\\([\\`*_{}\[\]()#+\-.!~>|])/g, "$1");
+  const parts = unescaped.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) =>
+    part.startsWith("**") && part.endsWith("**") && part.length > 4
+      ? <strong key={i} className="font-semibold text-gray-900">{part.slice(2, -2)}</strong>
+      : part,
+  );
+}
+
 function MarkdownNotes({ markdown }: { markdown: string }) {
   if (!markdown) return <p className="text-sm text-gray-400 italic">Sin resumen disponible.</p>;
 
@@ -49,10 +60,11 @@ function MarkdownNotes({ markdown }: { markdown: string }) {
   while (i < lines.length) {
     const line = lines[i];
 
-    if (line.startsWith("### ")) {
+    const heading = line.match(/^#{1,6}\s+(.*)$/);
+    if (heading) {
       elements.push(
         <h3 key={i} className="text-sm font-semibold text-gray-900 mt-5 mb-2 first:mt-0">
-          {line.slice(4)}
+          {inline(heading[1])}
         </h3>,
       );
       i++;
@@ -71,16 +83,22 @@ function MarkdownNotes({ markdown }: { markdown: string }) {
           {items.map((item, j) => (
             <li key={j} className="flex gap-1.5" style={{ paddingLeft: `${item.level * 0.75}rem` }}>
               <span className="text-gray-300 shrink-0 mt-0.5">{item.level > 0 ? "○" : "•"}</span>
-              <span>{item.text}</span>
+              <span>{inline(item.text)}</span>
             </li>
           ))}
         </ul>,
       );
     } else if (line.trim() === "") {
       i++;
+    } else if (/^\s+\S/.test(line)) {
+      // Indented paragraph under a list item (e.g. the detail line of a "next step")
+      elements.push(
+        <p key={i} className="text-sm text-gray-600 leading-relaxed pl-4">{inline(line.trim())}</p>,
+      );
+      i++;
     } else {
       elements.push(
-        <p key={i} className="text-sm text-gray-800 leading-relaxed">{line}</p>,
+        <p key={i} className="text-sm text-gray-800 leading-relaxed">{inline(line)}</p>,
       );
       i++;
     }
