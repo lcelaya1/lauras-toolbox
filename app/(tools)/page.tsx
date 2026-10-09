@@ -15,6 +15,13 @@ const tools = [
     description: "Notas de reuniones sincronizadas desde Granola AI. Guardadas para siempre, aunque caduquen en la app.",
     tag: "Granola · Sync",
   },
+  {
+    href: "/mail",
+    emoji: "✉️",
+    title: "Mis correos",
+    description: "Conecta tus buzones (Teamlabs y personal) para que el morning brief vea los correos pendientes. Solo lectura.",
+    tag: "Gmail · 6 cuentas",
+  },
 ];
 
 export default function Home() {

@@ -6,6 +6,7 @@ export const COOKIE = {
   session: "lt_session",   // signed-in Google user
   google: "lt_google",     // in-flight Google login (state, nonce, PKCE verifier)
   authz: "lt_authz",       // in-flight MCP authorization request
+  mailOauth: "lt_mail_oauth", // in-flight Gmail account connection (state, PKCE verifier, account)
 };
 
 const cookieOptions = (maxAge: number) => ({
