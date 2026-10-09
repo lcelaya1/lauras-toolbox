@@ -155,11 +155,10 @@ Tasks will appear grouped by category in the meeting detail view.`,
       "find_unsaved_meetings",
       {
         title: "Find Unsaved Meetings",
-        description: "Given Granola meeting IDs (UUIDs from the Granola connector's list_meetings), return the ones not yet saved in the Toolbox. Use before fetching full meeting details, so only new meetings are fetched and saved.",
+        description: "Given Granola meeting IDs (UUIDs from the Granola connector's list_meetings), return the ones not yet saved in the Toolbox. Use before fetching full meeting details, so only new meetings are fetched and saved. Calling it also records that the daily sync ran.",
         inputSchema: {
           granola_ids: z.array(z.string().min(1).max(100)).max(200).describe("Granola meeting IDs"),
         },
-        annotations: { readOnlyHint: true },
       },
       async ({ granola_ids }) => {
         const unsaved = await findUnsavedMeetings(granola_ids);

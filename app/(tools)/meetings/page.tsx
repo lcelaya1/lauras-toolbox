@@ -89,16 +89,21 @@ function MarkdownNotes({ markdown }: { markdown: string }) {
   return <div className="flex flex-col gap-1">{elements}</div>;
 }
 
+// The brief runs on weekdays, so allow a weekend before flagging the sync as late.
+function syncIsLate(lastSyncedAt: string): boolean {
+  return Date.now() - new Date(lastSyncedAt).getTime() > 3.5 * 24 * 60 * 60 * 1000;
+}
+
 export default function MeetingsPage() {
   const [meetings, setMeetings] = useState<MeetingMeta[]>([]);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [syncStats, setSyncStats] = useState<{ granola_total: number; app_total: number; added: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     return localStorage.getItem("meetings_selected_id");
   });
-  const [syncing, setSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"tareas" | "notas">("tareas");
   const [editingNotes, setEditingNotes] = useState(false);
@@ -163,6 +168,7 @@ export default function MeetingsPage() {
 
       setMeetings(meetings);
       setLastSyncedAt(data.lastSyncedAt ?? null);
+      setSyncStats(data.syncStats ?? null);
       return data.lastSyncedAt ?? null;
     } catch {
       setMeetings([]);
@@ -173,31 +179,19 @@ export default function MeetingsPage() {
   }
 
   useEffect(() => {
-    load().then((syncedAt) => {
-      const stale = !syncedAt || Date.now() - new Date(syncedAt).getTime() > 24 * 60 * 60 * 1000;
-      if (stale) handleSync();
-    });
+    load();
     const onVisible = () => { if (document.visibilityState === "visible") load(); };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handleSync() {
-    setSyncing(true);
-    setSyncResult(null);
-    try {
-      const res = await fetch("/api/meetings", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Error al sincronizar");
-      const msg = `✓ ${data.added} nueva${data.added !== 1 ? "s" : ""}, ${data.updated} actualizadas`;
-      setSyncResult(msg);
-      setTimeout(() => setSyncResult(null), 4000);
-      await load();
-    } catch (err) {
-      setSyncResult(`Error: ${err instanceof Error ? err.message : "desconocido"}`);
-    }
-    setSyncing(false);
+  // Granola meetings are synced every weekday morning by the morning brief routine
+  // (MCP tools find_unsaved_meetings / save_meetings); this button only reloads.
+  async function handleRefresh() {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
   }
 
   async function handleAddManual() {
@@ -334,14 +328,21 @@ export default function MeetingsPage() {
           <div className="min-w-0">
             <h1 className="text-sm font-semibold text-gray-900">Mis reuniones</h1>
             {lastSyncedAt ? (
-              <p className="text-[10px] text-gray-400 mt-0.5">Sync: {formatDate(lastSyncedAt)}</p>
+              <p
+                className={`text-[10px] mt-0.5 ${syncIsLate(lastSyncedAt) ? "text-amber-600" : "text-gray-400"}`}
+                title="Granola se sincroniza cada mañana con el morning brief"
+              >
+                Sync Granola: {formatDate(lastSyncedAt)}
+                {syncStats && syncStats.added > 0 && ` · ${syncStats.added} nueva${syncStats.added !== 1 ? "s" : ""}`}
+                {syncIsLate(lastSyncedAt) && " · revisa el morning brief"}
+              </p>
             ) : (
               <p className="text-[10px] text-gray-400 mt-0.5">Sin sincronizar</p>
             )}
           </div>
-          <button onClick={handleSync} title="Sincronizar con Granola"
+          <button onClick={handleRefresh} title="Actualizar lista"
             className="text-gray-400 hover:text-gray-600 transition-colors mt-0.5 shrink-0">
-            <svg viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`}>
+            <svg viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}>
               <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
             </svg>
           </button>
@@ -359,7 +360,7 @@ export default function MeetingsPage() {
           ) : meetings.length === 0 ? (
             <div className="px-4 py-8 text-center">
               <p className="text-xs text-gray-400">No hay reuniones guardadas.</p>
-              <p className="text-xs text-gray-300 mt-1">Haz clic en &quot;Sincronizar&quot;</p>
+              <p className="text-xs text-gray-300 mt-1">Las reuniones de Granola llegan cada mañana con el morning brief.</p>
             </div>
           ) : (
             meetings.map((m) => (
@@ -532,7 +533,9 @@ export default function MeetingsPage() {
                 <div>
                   {selected.tasks.length === 0 ? (
                     <p className="text-sm text-gray-400 italic">
-                      No hay tareas todavía. Pídele a Claude que extraiga las tareas de esta reunión.
+                      {selected.summaryMarkdown
+                        ? "No hay tareas asignadas a ti en esta reunión."
+                        : "No hay tareas todavía. Pídele a Claude que extraiga las tareas de esta reunión."}
                     </p>
                   ) : (<>
                   {selected.tasks.some(t => !t.done) && (

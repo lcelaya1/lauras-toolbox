@@ -59,13 +59,23 @@ export async function initDb(): Promise<void> {
   }
 }
 
-export async function listMeetings(): Promise<{ meetings: MeetingMeta[]; lastSyncedAt: string | null }> {
+export interface SyncStats {
+  granola_total: number;
+  app_total: number;
+  added: number;
+}
+
+export async function listMeetings(): Promise<{
+  meetings: MeetingMeta[];
+  lastSyncedAt: string | null;
+  syncStats: SyncStats | null;
+}> {
   const client = db();
   await initDb();
 
   const [meetingsResult, metaResult] = await Promise.all([
     client.execute("SELECT * FROM meetings ORDER BY created_at DESC"),
-    client.execute("SELECT value FROM meta WHERE key = 'last_synced_at'"),
+    client.execute("SELECT key, value FROM meta WHERE key IN ('last_synced_at', 'last_sync_stats')"),
   ]);
 
   const meetings: MeetingMeta[] = meetingsResult.rows.map((r) => {
@@ -86,8 +96,15 @@ export async function listMeetings(): Promise<{ meetings: MeetingMeta[]; lastSyn
     };
   });
 
-  const lastSyncedAt = (metaResult.rows[0]?.value as string | null) ?? null;
-  return { meetings, lastSyncedAt };
+  const meta: Record<string, string> = {};
+  for (const row of metaResult.rows) {
+    meta[row.key as string] = row.value as string;
+  }
+
+  let syncStats: SyncStats | null = null;
+  try { syncStats = meta.last_sync_stats ? JSON.parse(meta.last_sync_stats) : null; } catch { /* ignore */ }
+
+  return { meetings, lastSyncedAt: meta.last_synced_at ?? null, syncStats };
 }
 
 export async function syncMeetings(
