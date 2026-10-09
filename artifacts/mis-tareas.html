@@ -1,0 +1,320 @@
+<title>Mis tareas pendientes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;600;700&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: one narrow working column — counts, filters, then tasks grouped by project, oldest first; done-today at the end for undo. */
+:root {
+  --bg: #f6f6fb;
+  --surface: #ffffff;
+  --fg: #1d1b33;
+  --muted: #6b6886;
+  --line: #e3e2ef;
+  --accent: #4f46e5;
+  --accent-soft: #ecebfd;
+  --old: #b45309;
+  --old-soft: #fdf3e2;
+  --ok: #047857;
+  --ok-soft: #e3f5ee;
+  --danger: #b42318;
+  --font-display: "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Atkinson Hyperlegible", -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14131f; --surface: #1d1c2b; --fg: #ecebf7; --muted: #a3a1bd; --line: #2e2c42;
+    --accent: #a5a0ff; --accent-soft: #2a2850; --old: #f2b25c; --old-soft: #3a2c16;
+    --ok: #5fd3a6; --ok-soft: #173329; --danger: #ff8a7a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14131f; --surface: #1d1c2b; --fg: #ecebf7; --muted: #a3a1bd; --line: #2e2c42;
+  --accent: #a5a0ff; --accent-soft: #2a2850; --old: #f2b25c; --old-soft: #3a2c16;
+  --ok: #5fd3a6; --ok-soft: #173329; --danger: #ff8a7a; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.45; }
+.wrap { max-width: 760px; margin: 0 auto; padding-inline: 16px; padding-block: 28px 56px; display: flex; flex-direction: column; gap: 22px; }
+header { display: flex; flex-direction: column; gap: 6px; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.75rem; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0; max-width: 62ch; }
+.stats { display: flex; flex-wrap: wrap; gap: 8px; }
+.stat { font-family: var(--font-mono); font-size: 0.8rem; padding: 4px 10px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.stat.old { color: var(--old); background: var(--old-soft); border-color: transparent; }
+.stat.ok { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.search { flex: 1 1 220px; min-width: 0; font: inherit; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--fg); }
+.search:focus-visible, button:focus-visible, input[type=checkbox]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font: 600 0.78rem var(--font-display); letter-spacing: 0.02em; padding: 6px 11px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.banner { padding: 12px 14px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.banner.warn { border-color: var(--old); }
+.banner.err { border-color: var(--danger); }
+.banner p { margin: 0; min-width: 0; flex: 1 1 260px; }
+.btn { font: 600 0.85rem var(--font-display); padding: 8px 14px; border-radius: 9px; border: 1px solid var(--accent); background: var(--accent); color: var(--surface); cursor: pointer; }
+.btn.ghost { background: transparent; color: var(--accent); }
+section.group { display: flex; flex-direction: column; gap: 8px; }
+.group h2 { font: 700 0.75rem var(--font-display); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0; display: flex; gap: 8px; align-items: baseline; }
+.group h2 .n { font-family: var(--font-mono); letter-spacing: 0; font-weight: 500; }
+ul.tasks { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+li.task { display: grid; grid-template-columns: 22px 1fr; gap: 12px; padding: 12px 14px; border-top: 1px solid var(--line); }
+li.task:first-child { border-top: 0; }
+li.task input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--accent); cursor: pointer; }
+li.task[aria-busy="true"] { opacity: 0.55; }
+.body { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.text { overflow-wrap: anywhere; }
+li.done .text { color: var(--muted); text-decoration: line-through; }
+.meta { font-size: 0.8rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.age { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.age.old { color: var(--old); }
+.why { font-size: 0.8rem; color: var(--accent); }
+.undo { font: 600 0.78rem var(--font-display); color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+.empty { padding: 22px 16px; text-align: center; color: var(--muted); background: var(--surface); border: 1px dashed var(--line); border-radius: 12px; }
+footer { color: var(--muted); font-size: 0.8rem; display: flex; flex-wrap: wrap; gap: 6px 14px; }
+footer a { color: var(--accent); }
+@media (prefers-reduced-motion: no-preference) { li.task { transition: opacity .15s ease; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Mis tareas pendientes</h1>
+    <p class="sub">Tus tareas de las reuniones, en directo desde Laura's Toolbox. Marca lo que ya has hecho y se actualiza en el Toolbox al momento.</p>
+    <div class="stats" id="stats" aria-live="polite"><span class="stat">Cargando tareas…</span></div>
+  </header>
+
+  <div id="banner" hidden></div>
+
+  <div class="controls">
+    <input id="q" class="search" type="search" placeholder="Buscar tarea o reunión" aria-label="Buscar tarea o reunión">
+  </div>
+  <div class="chips" id="chips" role="group" aria-label="Filtrar por proyecto"></div>
+
+  <main id="list"></main>
+
+  <section class="group" id="doneSection" hidden>
+    <h2>Hechas hoy <span class="n" id="doneCount"></span></h2>
+    <ul class="tasks" id="doneList"></ul>
+  </section>
+
+  <footer>
+    <span id="fresh"></span>
+    <a href="https://lauras-toolbox.vercel.app/tasks" target="_blank" rel="noopener">Abrir en el Toolbox</a>
+  </footer>
+</div>
+
+<script>
+const SERVER = "Laura's Toolbox";
+const CATS = { COPSUP: "COP / SUP", "4o": "4º", FG: "Future Game", WF: "Workshop Fundamentals", TiB: "Tech in Biz", VEN: "Ventures", PFGs: "PFGs", OPS: "Operaciones" };
+const ORDER = ["COPSUP", "4o", "FG", "WF", "TiB", "VEN", "PFGs", "OPS"];
+const state = { open: [], done: [], filter: "all", q: "", busy: new Set(), loaded: false };
+let mcp = null;
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
+const fmtDate = (iso) => new Date(iso).toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+const ageLabel = (d) => d <= 0 ? "hoy" : d === 1 ? "ayer" : d < 14 ? `${d} días` : d < 60 ? `${Math.floor(d / 7)} semanas` : `${Math.floor(d / 30)} meses`;
+
+function showBanner(kind, message, action) {
+  const b = $("banner");
+  b.replaceChildren();
+  b.className = "banner " + (kind || "");
+  b.appendChild(el("p", null, message));
+  if (action) {
+    const btn = el("button", "btn", action.label);
+    btn.type = "button";
+    btn.addEventListener("click", action.run);
+    b.appendChild(btn);
+  }
+  b.hidden = false;
+}
+function clearBanner() { $("banner").hidden = true; }
+
+function explain(err, forWrite) {
+  const code = err && err.code;
+  switch (code) {
+    case "needs_reauth": return "Laura's Toolbox necesita reconectarse. Ve a claude.ai → Ajustes → Conectores → Laura's Toolbox → Conectar.";
+    case "server_not_connected":
+    case "server_not_found": return "Esta cuenta no tiene el conector Laura's Toolbox. Añádelo en claude.ai → Ajustes → Conectores.";
+    case "selection_required": return "Tienes más de un conector llamado Laura's Toolbox. Elige uno en el aviso de Claude y recarga.";
+    case "not_in_manifest": return "Esta página no tiene permiso para usar Laura's Toolbox. Actívalo en el menú de permisos de la página.";
+    case "blocked_by_policy": return "La política de tu organización bloquea esta herramienta del Toolbox.";
+    case "not_granted":
+    case "capability_disabled":
+    case "capability_removed": return "Esta vista no puede conectarse con tus conectores. Abre la página dentro de Claude.";
+    case "server_unavailable": return forWrite ? "El Toolbox no respondió. Recarga la lista antes de volver a marcarla, puede que ya se guardara." : "El Toolbox no responde ahora mismo. Se volverá a intentar solo.";
+    case "tool_error": return "El Toolbox rechazó la operación: " + (err.message || "error desconocido") + ".";
+    default: return (forWrite ? "No se pudo guardar el cambio" : "No se pudieron cargar las tareas") + (err && err.message ? ": " + err.message : ".");
+  }
+}
+
+function applyPayload(payload) {
+  if (!payload || !Array.isArray(payload.open)) return;
+  const today = startOfToday();
+  state.open = payload.open;
+  state.done = (payload.recently_done || []).filter((t) => t.done_at && new Date(t.done_at).getTime() >= today)
+    .sort((a, b) => (b.done_at || "").localeCompare(a.done_at || ""));
+  state.loaded = true;
+}
+
+function render() {
+  const open = state.open;
+  const old = open.filter((t) => t.age_days >= 14).length;
+  const stats = $("stats");
+  stats.replaceChildren();
+  if (!state.loaded) { stats.appendChild(el("span", "stat", "Cargando tareas…")); }
+  else {
+    stats.appendChild(el("span", "stat", `${open.length} pendientes`));
+    if (old) stats.appendChild(el("span", "stat old", `${old} con más de 2 semanas`));
+    if (state.done.length) stats.appendChild(el("span", "stat ok", `${state.done.length} hechas hoy`));
+  }
+
+  // Filter chips
+  const counts = {};
+  for (const t of open) { const c = t.category || "OPS"; counts[c] = (counts[c] || 0) + 1; }
+  const chips = $("chips");
+  chips.replaceChildren();
+  const mkChip = (key, label) => {
+    const b = el("button", "chip", label);
+    b.type = "button";
+    b.setAttribute("aria-pressed", String(state.filter === key));
+    b.addEventListener("click", () => { state.filter = key; render(); });
+    chips.appendChild(b);
+  };
+  if (state.loaded) {
+    mkChip("all", `Todas · ${open.length}`);
+    for (const c of ORDER) if (counts[c]) mkChip(c, `${CATS[c]} · ${counts[c]}`);
+    for (const c of Object.keys(counts)) if (!ORDER.includes(c)) mkChip(c, `${c} · ${counts[c]}`);
+  }
+
+  // Open tasks grouped by category
+  const q = state.q.trim().toLowerCase();
+  const visible = open.filter((t) => (state.filter === "all" || (t.category || "OPS") === state.filter)
+    && (!q || t.text.toLowerCase().includes(q) || t.meeting_title.toLowerCase().includes(q)));
+  const list = $("list");
+  list.replaceChildren();
+  if (state.loaded && !visible.length) {
+    list.appendChild(el("div", "empty", open.length ? "Ninguna tarea coincide con el filtro." : "No tienes tareas pendientes."));
+  }
+  const groups = {};
+  for (const t of visible) (groups[t.category || "OPS"] ||= []).push(t);
+  const cats = [...ORDER.filter((c) => groups[c]), ...Object.keys(groups).filter((c) => !ORDER.includes(c))];
+  for (const c of cats) {
+    const sec = el("section", "group");
+    const h = el("h2", null, CATS[c] || c);
+    h.appendChild(el("span", "n", String(groups[c].length)));
+    sec.appendChild(h);
+    const ul = el("ul", "tasks");
+    for (const t of groups[c].sort((a, b) => a.meeting_date.localeCompare(b.meeting_date))) ul.appendChild(taskRow(t, false));
+    sec.appendChild(ul);
+    list.appendChild(sec);
+  }
+
+  // Done today
+  $("doneSection").hidden = !state.done.length;
+  $("doneCount").textContent = String(state.done.length);
+  const dl = $("doneList");
+  dl.replaceChildren(...state.done.map((t) => taskRow(t, true)));
+}
+
+function taskRow(t, done) {
+  const li = el("li", "task" + (done ? " done" : ""));
+  if (state.busy.has(t.task_id)) li.setAttribute("aria-busy", "true");
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.id = "t-" + t.task_id;
+  box.checked = done;
+  box.disabled = state.busy.has(t.task_id) || !mcp;
+  box.addEventListener("change", () => toggle(t, !done));
+  const label = document.createElement("label");
+  label.className = "body";
+  label.htmlFor = box.id;
+  label.appendChild(el("span", "text", t.text));
+  const meta = el("span", "meta");
+  meta.appendChild(el("span", null, `${t.meeting_title} · ${fmtDate(t.meeting_date)}`));
+  if (!done) meta.appendChild(el("span", "age" + (t.age_days >= 14 ? " old" : ""), ageLabel(t.age_days)));
+  else meta.appendChild(el("span", null, t.done_by === "claude" ? "marcada por Claude" : t.done_by === "reminders" ? "desde Recordatorios" : "marcada por ti"));
+  label.appendChild(meta);
+  if (done && t.done_by === "claude" && t.done_evidence) label.appendChild(el("span", "why", "Motivo: " + t.done_evidence));
+  li.append(box, label);
+  if (done) {
+    const undo = el("button", "undo", "Deshacer");
+    undo.type = "button";
+    undo.disabled = state.busy.has(t.task_id) || !mcp;
+    undo.addEventListener("click", () => toggle(t, false));
+    label.appendChild(undo);
+  }
+  return li;
+}
+
+async function toggle(t, markDone) {
+  if (!mcp || state.busy.has(t.task_id)) return;
+  const prevOpen = state.open.slice(), prevDone = state.done.slice();
+  // Optimistic move
+  if (markDone) {
+    state.open = state.open.filter((x) => x.task_id !== t.task_id);
+    state.done = [{ ...t, done: true, done_by: "laura", done_at: new Date().toISOString(), done_evidence: null }, ...state.done];
+  } else {
+    state.done = state.done.filter((x) => x.task_id !== t.task_id);
+    state.open = [...state.open, { ...t, done: false }];
+  }
+  state.busy.add(t.task_id);
+  render();
+  try {
+    if (markDone) await mcp.callTool(SERVER, "complete_task", { task_id: t.task_id, marked_by: "laura" });
+    else await mcp.callTool(SERVER, "reopen_task", { task_id: t.task_id });
+    clearBanner();
+    mcp.invalidate(SERVER, "list_tasks").catch(() => {});
+  } catch (err) {
+    state.open = prevOpen; state.done = prevDone;
+    showBanner("err", explain(err, true));
+  } finally {
+    state.busy.delete(t.task_id);
+    render();
+  }
+}
+
+function setFresh(result) {
+  const at = result && result.cache ? result.cache.storedAt : Date.now();
+  $("fresh").textContent = "Actualizado " + new Date(at).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+}
+
+async function loadOnce() {
+  try {
+    const res = await mcp.callTool(SERVER, "list_tasks", { done_since_hours: 24 }, { cache: { refresh: true } });
+    applyPayload(res.payload); setFresh(res); clearBanner(); render();
+  } catch (err) { showBanner("err", explain(err, false)); }
+}
+
+$("q").addEventListener("input", (e) => { state.q = e.target.value; render(); });
+render();
+
+(async () => {
+  mcp = await (window.claude ? window.claude.use("mcp") : Promise.resolve(null));
+  if (!mcp) {
+    showBanner("warn", "Esta página necesita abrirse dentro de Claude para leer y actualizar tus tareas. También puedes usar la página Mis tareas del Toolbox.");
+    return;
+  }
+  mcp.watchTool(SERVER, "list_tasks", { done_since_hours: 24 }, (ev) => {
+    if (ev.type === "data") {
+      applyPayload(ev.result.payload); setFresh(ev.result);
+      if (!$("banner").classList.contains("err")) clearBanner();
+      render();
+      return;
+    }
+    const code = ev.error && ev.error.code;
+    if (code === "approval_required" || code === "consent_required") {
+      showBanner("warn", "Permite que esta página lea tus tareas de Laura's Toolbox.", { label: "Permitir y cargar", run: loadOnce });
+      return;
+    }
+    if (["needs_reauth", "server_not_connected", "blocked_by_policy", "not_in_manifest", "selection_required"].includes(code)) {
+      state.open = []; state.done = []; state.loaded = false; render();
+    }
+    showBanner(code === "server_unavailable" ? "warn" : "err", explain(ev.error, false),
+      code === "server_unavailable" ? null : { label: "Reintentar", run: loadOnce });
+  }, { refetchInterval: 120000 });
+  render();
+})();
+</script>
