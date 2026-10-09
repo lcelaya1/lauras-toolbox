@@ -4,6 +4,7 @@ import { verifyAccessToken } from "@/lib/auth/store";
 import { z } from "zod";
 import { listMeetings, updateTasks } from "@/lib/meetings-store";
 import { listRecordings } from "@/lib/blob-store";
+import { findUnsavedMeetings, saveMeetingsIfNew } from "@/lib/meetings-sync";
 
 export const maxDuration = 60;
 
@@ -145,6 +146,54 @@ Tasks will appear grouped by category in the meeting detail view.`,
             text: `✓ Saved ${tasks.length} task${tasks.length !== 1 ? "s" : ""} to "${meeting.title}".`,
           }],
         };
+      },
+    );
+
+    // ── Granola sync ──────────────────────────────────────────────────────
+
+    server.registerTool(
+      "find_unsaved_meetings",
+      {
+        title: "Find Unsaved Meetings",
+        description: "Given Granola meeting IDs (UUIDs from the Granola connector's list_meetings), return the ones not yet saved in the Toolbox. Use before fetching full meeting details, so only new meetings are fetched and saved.",
+        inputSchema: {
+          granola_ids: z.array(z.string().min(1).max(100)).max(200).describe("Granola meeting IDs"),
+        },
+        annotations: { readOnlyHint: true },
+      },
+      async ({ granola_ids }) => {
+        const unsaved = await findUnsavedMeetings(granola_ids);
+        return { content: [{ type: "text" as const, text: JSON.stringify({ unsaved }, null, 2) }] };
+      },
+    );
+
+    server.registerTool(
+      "save_meetings",
+      {
+        title: "Save Meetings",
+        description: `Save Granola meetings into the Toolbox. Insert-only: meetings whose granola_id already exists are skipped and never modified.
+Copy title and summary_markdown exactly as returned by the Granola connector's get_meetings (decode HTML entities like &amp; and &lt; to plain characters). Do not rewrite or summarise.`,
+        inputSchema: {
+          meetings: z.array(z.object({
+            granola_id: z.string().min(1).max(100).describe("Granola meeting UUID"),
+            title: z.string().max(500),
+            created_at: z.string().datetime({ offset: true }).describe("Meeting start, ISO 8601 (e.g. 2026-10-08T12:12:00+02:00)"),
+            summary_markdown: z.string().max(100_000).describe("The meeting's full Granola summary, verbatim"),
+            participants: z.string().max(5_000).optional().describe("Known participants, as listed by Granola"),
+            url: z.string().url().max(500).optional().describe("Granola note URL"),
+          })).min(1).max(20),
+        },
+      },
+      async ({ meetings }) => {
+        const result = await saveMeetingsIfNew(meetings.map((m) => ({
+          granolaId: m.granola_id,
+          title: m.title,
+          createdAt: new Date(m.created_at).toISOString(),
+          summaryMarkdown: m.summary_markdown,
+          participants: m.participants,
+          url: m.url,
+        })));
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
       },
     );
 
