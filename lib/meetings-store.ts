@@ -107,59 +107,6 @@ export async function listMeetings(): Promise<{
   return { meetings, lastSyncedAt: meta.last_synced_at ?? null, syncStats };
 }
 
-export async function syncMeetings(
-  incoming: Omit<MeetingMeta, "id" | "syncedAt">[],
-): Promise<{ added: number; updated: number; total: number }> {
-  const client = db();
-  await initDb();
-
-  const syncedAt = new Date().toISOString();
-  let added = 0;
-  let updated = 0;
-
-  for (const note of incoming) {
-    const existing = await client.execute({
-      sql: "SELECT id FROM meetings WHERE granola_id = ?",
-      args: [note.granolaId],
-    });
-
-    if (existing.rows.length === 0) {
-      await client.execute({
-        sql: `INSERT INTO meetings (id, granola_id, title, summary, summary_markdown, transcript_json, session_notes, created_at, synced_at, raw_json)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [
-          crypto.randomUUID(),
-          note.granolaId,
-          note.title,
-          note.summary,
-          note.summaryMarkdown,
-          note.transcriptJson,
-          "",
-          note.createdAt,
-          syncedAt,
-          note.rawJson,
-        ],
-      });
-      added++;
-    } else {
-      await client.execute({
-        sql: `UPDATE meetings SET title=?, summary=?, summary_markdown=?, transcript_json=?, synced_at=?, raw_json=?
-              WHERE granola_id=?`,
-        args: [note.title, note.summary, note.summaryMarkdown, note.transcriptJson, syncedAt, note.rawJson, note.granolaId],
-      });
-      updated++;
-    }
-  }
-
-  await client.execute({
-    sql: "INSERT OR REPLACE INTO meta (key, value) VALUES ('last_synced_at', ?)",
-    args: [syncedAt],
-  });
-
-  const total = await client.execute("SELECT COUNT(*) as count FROM meetings");
-  return { added, updated, total: total.rows[0].count as number };
-}
-
 export async function createMeeting(data: { title: string; createdAt: string; summaryMarkdown: string }): Promise<MeetingMeta> {
   const client = db();
   await initDb();
