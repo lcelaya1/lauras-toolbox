@@ -260,7 +260,9 @@ export default function MeetingsPage() {
   async function handleToggleTask(meetingId: string, index: number) {
     const meeting = meetings.find((m) => m.id === meetingId);
     if (!meeting) return;
-    const updated: Task[] = meeting.tasks.map((t, i) => i === index ? { ...t, done: !t.done } : t);
+    const updated: Task[] = meeting.tasks.map((t, i) => i !== index ? t : t.done
+      ? { ...t, done: false, doneAt: undefined, doneBy: undefined, doneEvidence: undefined }
+      : { ...t, done: true, doneAt: new Date().toISOString(), doneBy: "laura" as const, doneEvidence: undefined });
     setMeetings((prev) => prev.map((m) => m.id === meetingId ? { ...m, tasks: updated } : m));
     await fetch(`/api/meetings/${meetingId}`, {
       method: "PATCH",
@@ -299,7 +301,7 @@ export default function MeetingsPage() {
     if (!text || !selected) return;
     setAddingTask(false);
     setNewTaskText("");
-    const newTask: Task = { id: crypto.randomUUID(), text, done: false, category: newTaskCategory };
+    const newTask: Task = { id: crypto.randomUUID(), text, done: false, category: newTaskCategory, createdAt: new Date().toISOString(), source: "manual" };
     const updated = [...selected.tasks, newTask];
     setMeetings((prev) => prev.map((m) => m.id === selected.id ? { ...m, tasks: updated } : m));
     await fetch(`/api/meetings/${selected.id}`, {
@@ -691,9 +693,14 @@ export default function MeetingsPage() {
                                       {/* Task text */}
                                       <span
                                         onClick={() => { if (!task.done) { setEditingTask({ meetingId: selected.id, index: i }); setEditingTaskText(task.text); } }}
-                                        className={`flex-1 text-sm leading-snug mt-[2px] ${task.done ? "line-through text-gray-400" : "text-gray-800 cursor-text hover:text-indigo-700"}`}
+                                        className={`flex-1 text-sm leading-snug mt-[2px] ${task.done ? "text-gray-400" : "text-gray-800 cursor-text hover:text-indigo-700"}`}
                                       >
-                                        {task.text}
+                                        <span className={task.done ? "line-through" : ""}>{task.text}</span>
+                                        {task.done && task.doneBy === "claude" && (
+                                          <span className="block mt-0.5 text-[11px] text-indigo-500 no-underline" title={task.doneEvidence}>
+                                            ✓ Marcada por Claude{task.doneEvidence ? `: ${task.doneEvidence}` : ""}
+                                          </span>
+                                        )}
                                       </span>
                                     </>
                                   )}

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listMeetings, updateTasks } from "@/lib/meetings-store";
+import { setTaskDone } from "@/lib/meetings-tasks";
 
 // GET /api/tasks/complete?taskId=xxx&meetingId=xxx&token=yyy
 // Called by the Shortcuts automation when a reminder is marked done in Apple Reminders.
@@ -18,17 +18,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { meetings } = await listMeetings();
-  const meeting = meetings.find((m) => m.id === meetingId);
-  if (!meeting) {
-    return NextResponse.json({ error: "Meeting not found" }, { status: 404 });
+  const result = await setTaskDone(taskId, true, "reminders");
+  if (!result) {
+    return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
-
-  const updated = meeting.tasks.map((t) =>
-    t.id === taskId ? { ...t, done: true } : t,
-  );
-
-  await updateTasks(meetingId, updated);
 
   // Return a friendly HTML page so Safari auto-closes cleanly on iOS
   return new NextResponse(

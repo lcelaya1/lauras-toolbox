@@ -40,12 +40,12 @@ export async function findUnsavedMeetings(granolaIds: string[]): Promise<string[
 }
 
 export async function saveMeetingsIfNew(meetings: IncomingMeeting[]): Promise<{
-  added: string[]; skipped: string[]; total: number;
+  added: { granola_id: string; meeting_id: string }[]; skipped: string[]; total: number;
 }> {
   await initDb();
   const client = db();
   const syncedAt = new Date().toISOString();
-  const added: string[] = [];
+  const added: { granola_id: string; meeting_id: string }[] = [];
   const skipped: string[] = [];
 
   for (const m of meetings) {
@@ -53,13 +53,15 @@ export async function saveMeetingsIfNew(meetings: IncomingMeeting[]): Promise<{
       id: m.granolaId, title: m.title, created_at: m.createdAt,
       url: m.url ?? null, participants: m.participants ?? "", source: "granola-mcp",
     });
+    const meetingId = crypto.randomUUID();
     const res = await client.execute({
       sql: `INSERT INTO meetings (id, granola_id, title, summary, summary_markdown, transcript_json, session_notes, created_at, synced_at, raw_json)
             SELECT ?, ?, ?, '', ?, '', '', ?, ?, ?
             WHERE NOT EXISTS (SELECT 1 FROM meetings WHERE granola_id = ?)`,
-      args: [crypto.randomUUID(), m.granolaId, m.title, m.summaryMarkdown, m.createdAt, syncedAt, raw, m.granolaId],
+      args: [meetingId, m.granolaId, m.title, m.summaryMarkdown, m.createdAt, syncedAt, raw, m.granolaId],
     });
-    (res.rowsAffected ? added : skipped).push(m.granolaId);
+    if (res.rowsAffected) added.push({ granola_id: m.granolaId, meeting_id: meetingId });
+    else skipped.push(m.granolaId);
   }
 
   // A run calls find_unsaved_meetings once, then save_meetings in batches:

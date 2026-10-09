@@ -16,6 +16,13 @@ const tools = [
     tag: "Granola · Sync",
   },
   {
+    href: "/tasks",
+    emoji: "✅",
+    title: "Mis tareas",
+    description: "Todas tus tareas de las reuniones en un sitio, las más antiguas primero. Claude las extrae y revisa cuáles están hechas.",
+    tag: "Reuniones · Seguimiento",
+  },
+  {
     href: "/mail",
     emoji: "✉️",
     title: "Mis correos",

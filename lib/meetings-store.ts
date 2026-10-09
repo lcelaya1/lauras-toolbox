@@ -7,6 +7,11 @@ export interface Task {
   text: string;
   done: boolean;
   category?: TaskCategory;
+  createdAt?: string;
+  source?: "claude" | "manual";
+  doneAt?: string;
+  doneBy?: "laura" | "claude" | "reminders";
+  doneEvidence?: string;   // why Claude marked it done (shown so Laura can undo)
 }
 
 export interface MeetingMeta {
