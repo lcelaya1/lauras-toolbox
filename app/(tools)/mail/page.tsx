@@ -110,13 +110,104 @@ export default function MailPage() {
           {accounts === null
             ? <p className="px-5 py-6 text-sm text-gray-400">Cargando…</p>
             : personal.length
-              ? personal.map((a) => <AccountRow key={a.email} a={a} />)
+              ? personal.map((a) => (
+                <PersonalRow key={a.email} a={a} onSaved={() => { setNotice({ kind: "ok", text: "Gmail personal reconectado." }); load(); }} />
+              ))
               : <p className="px-5 py-4 text-sm text-gray-500">Falta configurar GMAIL_PERSONAL_ADDRESS en Vercel.</p>}
         </div>
         <p className="mt-2 text-xs text-gray-400">
-          Usa una contraseña de aplicación de Google (GMAIL_PERSONAL_APP_PASSWORD). Si deja de funcionar, crea una nueva y actualízala en Vercel.
+          Se conecta con una contraseña de aplicación de Google. Si deja de funcionar (por ejemplo, al cambiar la contraseña de Google), pulsa Reconectar y pega una nueva.
         </p>
       </section>
+    </div>
+  );
+}
+
+function PersonalRow({ a, onSaved }: { a: AccountInfo; onSaved: () => void }) {
+  const s = STATUS[a.status];
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/mail/app-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setError(data.error ?? "No se pudo guardar."); return; }
+      setPassword("");
+      setOpen(false);
+      onSaved();
+    } catch {
+      setError("No se pudo contactar con el Toolbox. Inténtalo de nuevo.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const failed = a.status === "needs_reconnect" || a.status === "error";
+  return (
+    <div className="px-5 py-4">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-gray-900 truncate">{a.email}</p>
+          <p className={`mt-0.5 flex items-center gap-1.5 text-xs ${s.tone}`}>
+            <span className={`inline-block h-1.5 w-1.5 rounded-full ${s.dot}`} />
+            {s.text}
+          </p>
+          {a.status === "needs_reconnect" && (
+            <p className="mt-1 text-xs text-gray-500">Gmail ha rechazado la contraseña de aplicación (se ha revocado o ha caducado).</p>
+          )}
+          {a.status === "error" && a.detail && <p className="mt-1 text-xs text-gray-500">{a.detail}</p>}
+        </div>
+        {!open && (
+          <button onClick={() => setOpen(true)}
+            className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${failed
+              ? "bg-indigo-600 text-white hover:bg-indigo-500"
+              : "border border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
+            {failed ? "Reconectar" : "Cambiar contraseña"}
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <form onSubmit={save} className="mt-4 flex flex-col gap-3 rounded-lg bg-gray-50 p-4">
+          <ol className="list-decimal pl-4 text-xs leading-relaxed text-gray-600">
+            <li>
+              Abre{" "}
+              <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline">
+                myaccount.google.com/apppasswords
+              </a>{" "}
+              con {a.email}.
+            </li>
+            <li>Crea una contraseña llamada &quot;Laura&apos;s Toolbox&quot; (si ya existe una antigua, bórrala).</li>
+            <li>Pega aquí las 16 letras. El Toolbox la prueba con Gmail antes de guardarla.</li>
+          </ol>
+          <label htmlFor="app-password" className="sr-only">Contraseña de aplicación</label>
+          <input id="app-password" type="password" autoComplete="off" spellCheck={false}
+            value={password} onChange={(e) => setPassword(e.target.value)}
+            placeholder="abcd efgh ijkl mnop"
+            className="rounded-lg border border-gray-200 bg-white px-3 py-2 font-mono text-sm tracking-wider text-gray-900 focus:border-indigo-400 focus:outline-none" />
+          {error && <p className="text-xs text-red-700">{error}</p>}
+          <div className="flex gap-2">
+            <button type="submit" disabled={saving || password.replace(/\s+/g, "").length < 16}
+              className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-50">
+              {saving ? "Probando con Gmail…" : "Probar y guardar"}
+            </button>
+            <button type="button" onClick={() => { setOpen(false); setPassword(""); setError(null); }}
+              className="rounded-lg px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700">
+              Cancelar
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }

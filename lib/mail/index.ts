@@ -3,7 +3,7 @@ import {
   type AccountError, type AccountStatus, type MailAccount, type ThreadMessage, type ThreadMeta, type ThreadSummary,
 } from "./common";
 import { accessTokenFor, gmailThreadMessages, gmailThreads, ReconnectNeeded } from "./google";
-import { imapCheck, imapThreadMessages, imapThreads } from "./imap";
+import { ImapAuthError, imapCheck, imapThreadMessages, imapThreads } from "./imap";
 import { listStoredAccounts } from "./store";
 
 // Read-only mail access across all accounts. Accounts run in parallel with a per-account
@@ -19,11 +19,11 @@ export interface AccountInfo {
 }
 
 function describe(e: unknown): { status: AccountStatus; message: string } {
-  if (e instanceof ReconnectNeeded) return { status: "needs_reconnect", message: e.message };
+  if (e instanceof ReconnectNeeded || e instanceof ImapAuthError) return { status: "needs_reconnect", message: e.message };
   const message = e instanceof Error ? e.message : "Unknown error";
   // IMAP auth failures (bad / revoked app password) need user action too.
   if (/AUTHENTICATIONFAILED|Invalid credentials|authenticat/i.test(message)) {
-    return { status: "needs_reconnect", message: "Gmail rejected the app password — create a new one and update GMAIL_PERSONAL_APP_PASSWORD" };
+    return { status: "needs_reconnect", message: "Gmail rejected the app password. Reconnect it on the Toolbox mail page with a new app password." };
   }
   return { status: "error", message: message.slice(0, 300) };
 }

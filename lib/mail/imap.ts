@@ -4,22 +4,31 @@ import {
   cleanText, isAutomated, LIMITS, stripQuoted,
   type Address, type MessageMeta, type ThreadMessage, type ThreadMeta,
 } from "./common";
+import { getAppPassword } from "./store";
 
 // Personal Gmail over IMAP (imap.gmail.com:993, TLS) with an app password.
 // Mailboxes are only ever opened read-only (EXAMINE), so flags like \Seen never change.
 // Gmail extensions keep results in the Gmail API shape: X-GM-RAW for search,
 // X-GM-THRID for threads (converted to the hex id Gmail's web UI uses), X-GM-LABELS for Inbox/Sent.
 
-function config() {
-  const user = process.env.GMAIL_PERSONAL_ADDRESS?.trim();
-  const pass = process.env.GMAIL_PERSONAL_APP_PASSWORD?.replace(/\s+/g, "");
-  if (!user || !pass) throw new Error("GMAIL_PERSONAL_ADDRESS / GMAIL_PERSONAL_APP_PASSWORD not set");
-  return { user, pass };
+export class ImapAuthError extends Error {}
+
+export const normalizeAppPassword = (p: string) => p.replace(/\s+/g, "");
+
+// The app password saved from the mail page wins over the one in the environment.
+async function config(passOverride?: string) {
+  const user = process.env.GMAIL_PERSONAL_ADDRESS?.trim().toLowerCase();
+  if (!user) throw new Error("GMAIL_PERSONAL_ADDRESS not set");
+  const pass = passOverride
+    ?? (await getAppPassword(user).catch(() => null))
+    ?? process.env.GMAIL_PERSONAL_APP_PASSWORD;
+  if (!pass) throw new ImapAuthError("No app password configured");
+  return { user, pass: normalizeAppPassword(pass) };
 }
 
-function newClient(): ImapFlow {
-  const { user, pass } = config();
-  return new ImapFlow({
+async function connectClient(passOverride?: string): Promise<ImapFlow> {
+  const { user, pass } = await config(passOverride);
+  const client = new ImapFlow({
     host: "imap.gmail.com",
     port: 993,
     secure: true,
@@ -29,11 +38,19 @@ function newClient(): ImapFlow {
     greetingTimeout: 10_000,
     socketTimeout: 20_000,
   });
+  try {
+    await client.connect();
+  } catch (e) {
+    if ((e as { authenticationFailed?: boolean }).authenticationFailed) {
+      throw new ImapAuthError("Gmail rejected the app password (it was revoked or is wrong). Reconnect it on the Toolbox mail page with a new app password.");
+    }
+    throw e;
+  }
+  return client;
 }
 
 async function withImap<T>(fn: (client: ImapFlow, boxes: { all: string; sent: string }) => Promise<T>): Promise<T> {
-  const client = newClient();
-  await client.connect();
+  const client = await connectClient();
   try {
     // Find folders by special-use flag, not by (localized) name: "[Gmail]/Enviados" etc.
     const list = await client.list();
@@ -46,10 +63,9 @@ async function withImap<T>(fn: (client: ImapFlow, boxes: { all: string; sent: st
   }
 }
 
-// Login check only (no folder listing), used for the account status.
-export async function imapCheck(): Promise<void> {
-  const client = newClient();
-  await client.connect();
+// Login check only (no folder listing): the account status, and testing a new app password before saving it.
+export async function imapCheck(passOverride?: string): Promise<void> {
+  const client = await connectClient(passOverride);
   await client.logout().catch(() => client.close());
 }
 

@@ -95,6 +95,11 @@ export async function saveRefreshToken(email: string, refreshToken: string): Pro
   });
 }
 
+// Personal Gmail (IMAP): the app password entered on the mail page, stored in the same
+// encrypted column. It takes precedence over GMAIL_PERSONAL_APP_PASSWORD.
+export const getAppPassword = getRefreshToken;
+export const saveAppPassword = saveRefreshToken;
+
 export async function setAccountStatus(email: string, status: AccountStatus, error: string | null): Promise<void> {
   const c = await init();
   await c.execute({
