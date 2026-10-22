@@ -38,22 +38,31 @@ async function modifyTasks<T>(meetingId: string, fn: (tasks: Task[]) => { tasks:
 const normalize = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
 
 // Add-only: tasks already on the meeting (same text, ignoring case/accents/punctuation)
-// are skipped; existing tasks and their done state are never touched.
+// are skipped; existing tasks and their done state are never touched. Deleted tasks and
+// the original text of edited tasks still count, so re-extracting the same meeting notes
+// never brings back a task Laura deleted or renamed.
 export async function addTasks(meetingId: string, incoming: { text: string; category: TaskCategory; dueDate?: string }[]) {
   return modifyTasks(meetingId, (tasks) => {
-    const seen = new Set(tasks.map((t) => normalize(t.text)));
+    const seen = new Map<string, Task>();
+    for (const t of tasks) {
+      seen.set(normalize(t.text), t);
+      if (t.originalText) seen.set(normalize(t.originalText), t);
+    }
     const added: Task[] = [];
     const skipped: string[] = [];
+    const skippedDeleted: string[] = [];
     for (const { text, category, dueDate } of incoming) {
       const key = normalize(text);
-      if (!key || seen.has(key)) { skipped.push(text); continue; }
-      seen.add(key);
-      added.push({
+      const match = seen.get(key);
+      if (!key || match) { (match?.deletedAt ? skippedDeleted : skipped).push(text); continue; }
+      const task: Task = {
         id: crypto.randomUUID(), text: text.trim(), done: false, category, createdAt: new Date().toISOString(), source: "claude",
         ...(dueDate ? { dueDate } : {}),
-      });
+      };
+      seen.set(key, task);
+      added.push(task);
     }
-    return { tasks: [...tasks, ...added], result: { added, skipped } };
+    return { tasks: [...tasks, ...added], result: { added, skipped, skippedDeleted } };
   });
 }
 
@@ -68,15 +77,15 @@ async function findTask(taskId: string): Promise<{ meetingId: string; meetingTit
 
 export const OWN_TASK_TITLE = "Own task";
 
-// Standalone tasks (not from a meeting). Skips the insert when an open standalone task
-// with the same text already exists, so retries don't create duplicates.
+// Standalone tasks (not from a meeting). Skips the insert when an open, non-deleted
+// standalone task with the same text already exists, so retries don't create duplicates.
 export async function addStandaloneTask(
   text: string, category: TaskCategory, dueDate?: string,
 ): Promise<{ task_id: string; duplicate: boolean }> {
   await initDb();
   const client = db();
   const key = normalize(text);
-  const { rows } = await client.execute("SELECT id, text FROM standalone_tasks WHERE done = 0");
+  const { rows } = await client.execute("SELECT id, text FROM standalone_tasks WHERE done = 0 AND deleted_at IS NULL");
   const existing = rows.find((r) => normalize(String(r.text)) === key);
   if (existing) return { task_id: String(existing.id), duplicate: true };
   const id = crypto.randomUUID();
@@ -95,68 +104,106 @@ function standaloneToTask(r: Record<string, unknown>): Task {
     category: r.category as TaskCategory,
     createdAt: String(r.created_at),
     dueDate: (r.due_date as string | null) ?? undefined,
+    originalText: (r.original_text as string | null) ?? undefined,
+    deletedAt: (r.deleted_at as string | null) ?? undefined,
     doneAt: (r.done_at as string | null) ?? undefined,
     doneBy: (r.done_by as Task["doneBy"] | null) ?? undefined,
     doneEvidence: (r.done_evidence as string | null) ?? undefined,
   };
 }
 
-async function setStandaloneDone(taskId: string, done: boolean, by: Task["doneBy"], evidence?: string): Promise<Task | null> {
+// ── Changing one task ───────────────────────────────────────────────────────
+// Every change (done, due date, edit, delete, restore) goes through mutateTask, which
+// finds the task in standalone_tasks or in a meeting's JSON and writes it back.
+
+export interface TaskChange { before: Task; task: Task; meetingTitle: string; meetingId: string | null }
+export type TaskResult = TaskChange | { error: string; status: 404 | 409 };
+
+const notFound = (taskId: string): TaskResult => ({ error: `Task ${taskId} not found.`, status: 404 });
+const conflict = (error: string) => ({ error, status: 409 as const });
+
+// fn returns the new task, or an error message when the change isn't allowed.
+async function mutateTask(taskId: string, fn: (t: Task) => Task | { error: string }): Promise<TaskResult> {
+  await initDb();
   const client = db();
-  const res = await client.execute(done
-    ? { sql: "UPDATE standalone_tasks SET done = 1, done_at = ?, done_by = ?, done_evidence = ? WHERE id = ?",
-        args: [new Date().toISOString(), by ?? null, evidence?.slice(0, 500) ?? null, taskId] }
-    : { sql: "UPDATE standalone_tasks SET done = 0, done_at = NULL, done_by = NULL, done_evidence = NULL WHERE id = ?",
-        args: [taskId] });
-  if (!res.rowsAffected) return null;
   const { rows } = await client.execute({ sql: "SELECT * FROM standalone_tasks WHERE id = ?", args: [taskId] });
-  return rows[0] ? standaloneToTask(rows[0] as Record<string, unknown>) : null;
-}
-
-export async function setTaskDone(
-  taskId: string, done: boolean, by: Task["doneBy"], evidence?: string,
-): Promise<{ task: Task; meetingTitle: string } | null> {
-  await initDb();
-  const own = await setStandaloneDone(taskId, done, by, evidence);
-  if (own) return { task: own, meetingTitle: OWN_TASK_TITLE };
-  const found = await findTask(taskId);
-  if (!found) return null;
-  const task = await modifyTasks(found.meetingId, (tasks) => {
-    let changed: Task | null = null;
-    const next = tasks.map((t) => {
-      if (t.id !== taskId) return t;
-      changed = done
-        ? { ...t, done: true, doneAt: new Date().toISOString(), doneBy: by, doneEvidence: evidence?.slice(0, 500) }
-        : { ...t, done: false, doneAt: undefined, doneBy: undefined, doneEvidence: undefined };
-      return changed;
+  if (rows[0]) {
+    const before = standaloneToTask(rows[0] as Record<string, unknown>);
+    const next = fn(before);
+    if ("error" in next) return conflict(next.error);
+    await client.execute({
+      sql: `UPDATE standalone_tasks SET text = ?, category = ?, due_date = ?, original_text = ?, deleted_at = ?,
+              done = ?, done_at = ?, done_by = ?, done_evidence = ? WHERE id = ?`,
+      args: [next.text, next.category ?? "OPS", next.dueDate ?? null, next.originalText ?? null, next.deletedAt ?? null,
+        next.done ? 1 : 0, next.doneAt ?? null, next.doneBy ?? null, next.doneEvidence ?? null, taskId],
     });
-    return { tasks: next, result: changed as Task | null };
-  });
-  return task ? { task, meetingTitle: found.meetingTitle } : null;
-}
-
-// Sets (or with null, clears) the due date of a meeting or standalone task, open or done.
-export async function setDueDate(taskId: string, dueDate: string | null): Promise<{ task: Task; meetingTitle: string } | null> {
-  await initDb();
-  const client = db();
-  const res = await client.execute({ sql: "UPDATE standalone_tasks SET due_date = ? WHERE id = ?", args: [dueDate, taskId] });
-  if (res.rowsAffected) {
-    const { rows } = await client.execute({ sql: "SELECT * FROM standalone_tasks WHERE id = ?", args: [taskId] });
-    return { task: standaloneToTask(rows[0] as Record<string, unknown>), meetingTitle: OWN_TASK_TITLE };
+    return { before, task: next, meetingTitle: OWN_TASK_TITLE, meetingId: null };
   }
   const found = await findTask(taskId);
-  if (!found) return null;
-  const task = await modifyTasks(found.meetingId, (tasks) => {
-    let changed: Task | null = null;
-    const next = tasks.map((t) => {
-      if (t.id !== taskId) return t;
-      changed = { ...t, dueDate: dueDate ?? undefined };
-      return changed;
-    });
-    return { tasks: next, result: changed as Task | null };
+  if (!found) return notFound(taskId);
+  const result = await modifyTasks(found.meetingId, (tasks) => {
+    const i = tasks.findIndex((t) => t.id === taskId);
+    if (i < 0) return { tasks, result: notFound(taskId) };
+    const next = fn(tasks[i]);
+    if ("error" in next) return { tasks, result: conflict(next.error) };
+    return {
+      tasks: tasks.map((t, j) => (j === i ? next : t)),
+      result: { before: tasks[i], task: next, meetingTitle: found.meetingTitle, meetingId: found.meetingId } as TaskResult,
+    };
   });
-  return task ? { task, meetingTitle: found.meetingTitle } : null;
+  return result ?? notFound(taskId);
 }
+
+const DELETED = { error: "This task is deleted. Restore it first with restore_task." };
+
+export function setTaskDone(taskId: string, done: boolean, by: Task["doneBy"], evidence?: string): Promise<TaskResult> {
+  return mutateTask(taskId, (t) => {
+    if (t.deletedAt) return DELETED;
+    return done
+      ? { ...t, done: true, doneAt: new Date().toISOString(), doneBy: by, doneEvidence: evidence?.slice(0, 500) }
+      : { ...t, done: false, doneAt: undefined, doneBy: undefined, doneEvidence: undefined };
+  });
+}
+
+// Only the fields given are changed; dueDate null clears it. Works on open and done tasks.
+export function updateTask(
+  taskId: string, changes: { text?: string; category?: TaskCategory; dueDate?: string | null },
+): Promise<TaskResult> {
+  return mutateTask(taskId, (t) => {
+    if (t.deletedAt) return DELETED;
+    const next: Task = { ...t };
+    if (changes.text !== undefined && changes.text.trim() !== t.text) {
+      next.text = changes.text.trim();
+      next.originalText = t.originalText ?? t.text;
+    }
+    if (changes.category !== undefined) next.category = changes.category;
+    if (changes.dueDate !== undefined) next.dueDate = changes.dueDate ?? undefined;
+    return next;
+  });
+}
+
+export function setDueDate(taskId: string, dueDate: string | null): Promise<TaskResult> {
+  return updateTask(taskId, { dueDate });
+}
+
+// Soft delete: the task stays stored (and keeps blocking re-extraction) but is hidden.
+export function deleteTask(taskId: string): Promise<TaskResult> {
+  return mutateTask(taskId, (t) => (t.deletedAt ? t : { ...t, deletedAt: new Date().toISOString() }));
+}
+
+// Undo a delete. duplicateOf is set when an open task with the same text was added since.
+export async function restoreTask(taskId: string): Promise<TaskResult & { duplicateOf?: string }> {
+  const r = await mutateTask(taskId, (t) => ({ ...t, deletedAt: undefined }));
+  if ("error" in r) return r;
+  const key = normalize(r.task.text);
+  const siblings = r.meetingId
+    ? (await readTasks(db(), r.meetingId))?.tasks ?? []
+    : (await db().execute("SELECT * FROM standalone_tasks")).rows.map((row) => standaloneToTask(row as Record<string, unknown>));
+  const dup = siblings.find((t) => t.id !== taskId && !t.deletedAt && !t.done && normalize(t.text) === key);
+  return dup ? { ...r, duplicateOf: dup.id } : r;
+}
+
+// ── Listing ─────────────────────────────────────────────────────────────────
 
 // Today's date in Madrid as YYYY-MM-DD (the server runs in UTC).
 function todayInMadrid(): string {
@@ -186,26 +233,22 @@ export interface TaskView {
   age_days: number;
 }
 
-// Open tasks plus tasks completed within the given window. Standalone tasks are merged
-// in by creation date. sort "age" (default): oldest first; "due": overdue first, then
-// nearest due date, then tasks without a date (oldest first within ties).
-export async function listTasks(
-  opts: { doneSinceHours?: number; sort?: "age" | "due" } = {},
-): Promise<{ open: TaskView[]; recently_done: TaskView[] }> {
+export interface DeletedTaskView extends TaskView { deleted_at: string }
+
+// Every task (deleted ones included) with its meeting, as views.
+async function allTaskViews(): Promise<{ t: Task; view: TaskView }[]> {
   await initDb();
   const client = db();
   const [meetings, standalone] = await Promise.all([
     client.execute("SELECT id, title, created_at, tasks FROM meetings WHERE tasks != '[]' ORDER BY created_at ASC"),
     client.execute("SELECT * FROM standalone_tasks"),
   ]);
-  const since = opts.doneSinceHours ? Date.now() - opts.doneSinceHours * 3_600_000 : null;
-  const open: TaskView[] = [];
-  const recentlyDone: TaskView[] = [];
   const today = todayInMadrid();
+  const out: { t: Task; view: TaskView }[] = [];
   const add = (t: Task, meeting: { id: string | null; title: string; date: string }) => {
     const dueDate = t.dueDate ?? null;
     const daysUntilDue = dueDate ? daysBetween(today, dueDate) : null;
-    const view: TaskView = {
+    out.push({ t, view: {
       task_id: t.id,
       text: t.text,
       category: t.category ?? null,
@@ -221,9 +264,7 @@ export async function listTasks(
       days_until_due: daysUntilDue,
       is_overdue: !t.done && daysUntilDue !== null && daysUntilDue < 0,
       age_days: Math.floor((Date.now() - new Date(meeting.date).getTime()) / 86_400_000),
-    };
-    if (!t.done) open.push(view);
-    else if (since && t.doneAt && new Date(t.doneAt).getTime() >= since) recentlyDone.push(view);
+    } });
   };
   for (const r of meetings.rows) {
     let tasks: Task[] = [];
@@ -234,9 +275,35 @@ export async function listTasks(
     const t = standaloneToTask(r as Record<string, unknown>);
     add(t, { id: null, title: OWN_TASK_TITLE, date: t.createdAt! });
   }
+  return out;
+}
+
+// Open tasks plus tasks completed within the given window, deleted tasks excluded.
+// Standalone tasks are merged in by creation date. sort "age" (default): oldest first;
+// "due": overdue first, then nearest due date, then tasks without a date (oldest first within ties).
+export async function listTasks(
+  opts: { doneSinceHours?: number; sort?: "age" | "due" } = {},
+): Promise<{ open: TaskView[]; recently_done: TaskView[] }> {
+  const since = opts.doneSinceHours ? Date.now() - opts.doneSinceHours * 3_600_000 : null;
+  const open: TaskView[] = [];
+  const recentlyDone: TaskView[] = [];
+  for (const { t, view } of await allTaskViews()) {
+    if (t.deletedAt) continue;
+    if (!t.done) open.push(view);
+    else if (since && t.doneAt && new Date(t.doneAt).getTime() >= since) recentlyDone.push(view);
+  }
   const byAge = (a: TaskView, b: TaskView) => new Date(a.meeting_date).getTime() - new Date(b.meeting_date).getTime();
   const byDue = (a: TaskView, b: TaskView) =>
     (a.days_until_due ?? Infinity) - (b.days_until_due ?? Infinity) || byAge(a, b);
   const order = opts.sort === "due" ? byDue : byAge;
   return { open: open.sort(order), recently_done: recentlyDone.sort(order) };
+}
+
+// Tasks deleted within the last `days` days, most recently deleted first.
+export async function listDeletedTasks(days = 30): Promise<DeletedTaskView[]> {
+  const since = Date.now() - days * 86_400_000;
+  return (await allTaskViews())
+    .filter(({ t }) => t.deletedAt && new Date(t.deletedAt).getTime() >= since)
+    .map(({ t, view }) => ({ ...view, deleted_at: t.deletedAt! }))
+    .sort((a, b) => b.deleted_at.localeCompare(a.deleted_at));
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 interface TaskView {
   task_id: string;
@@ -20,7 +20,15 @@ interface TaskView {
   age_days: number;
 }
 
+interface DeletedTaskView extends TaskView { deleted_at: string }
+
+interface TaskEdit { text: string; category: string; due_date: string | null }
+
 type SortMode = "age" | "due";
+
+function postJson(url: string, body: unknown) {
+  return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+}
 
 const CATEGORIES: Record<string, string> = {
   FG: "Future Game", COPSUP: "COP / SUP", VEN: "Ventures", "4o": "4o", WF: "Workshop Fundamentals",
@@ -67,6 +75,10 @@ export default function TasksPage() {
   const [done, setDone] = useState<TaskView[]>([]);
   const [category, setCategory] = useState<string>("all");
   const [sort, setSort] = useState<SortMode>("age");
+  const [toast, setToast] = useState<TaskView | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [deleted, setDeleted] = useState<DeletedTaskView[] | null>(null);
 
   async function load() {
     const res = await fetch("/api/tasks/list", { cache: "no-store" });
@@ -75,7 +87,13 @@ export default function TasksPage() {
     setDone((data.recently_done ?? []).sort((a: TaskView, b: TaskView) => (b.done_at ?? "").localeCompare(a.done_at ?? "")));
   }
 
+  async function loadDeleted() {
+    const res = await fetch("/api/tasks/deleted", { cache: "no-store" });
+    setDeleted((await res.json()).deleted ?? []);
+  }
+
   useEffect(() => { load(); }, []);
+  useEffect(() => { if (showDeleted) loadDeleted(); }, [showDeleted]);
 
   async function toggle(t: TaskView) {
     const next = !t.done;
@@ -104,6 +122,35 @@ export default function TasksPage() {
       body: JSON.stringify({ taskId: t.task_id, dueDate }),
     });
     if (!res.ok) await load();
+  }
+
+  async function editTask(t: TaskView, edit: TaskEdit) {
+    const patch = (list: TaskView[]) => list.map((x) => x.task_id === t.task_id
+      ? { ...x, text: edit.text, category: edit.category, due_date: edit.due_date } : x);
+    setOpen((prev) => prev && patch(prev));
+    setDone((prev) => patch(prev));
+    const res = await postJson("/api/tasks/update", { taskId: t.task_id, text: edit.text, category: edit.category, dueDate: edit.due_date });
+    if (!res.ok) await load();
+  }
+
+  async function removeTask(t: TaskView) {
+    setOpen((prev) => prev?.filter((x) => x.task_id !== t.task_id) ?? null);
+    setDone((prev) => prev.filter((x) => x.task_id !== t.task_id));
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast(t);
+    toastTimer.current = setTimeout(() => setToast(null), 6000);
+    const res = await postJson("/api/tasks/delete", { taskId: t.task_id });
+    if (!res.ok) { setToast(null); await load(); }
+    if (showDeleted) await loadDeleted();
+  }
+
+  async function restore(taskId: string) {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast(null);
+    setDeleted((prev) => prev?.filter((x) => x.task_id !== taskId) ?? null);
+    await postJson("/api/tasks/restore", { taskId });
+    await load();
+    if (showDeleted) await loadDeleted();
   }
 
   const counts = useMemo(() => {
@@ -151,7 +198,7 @@ export default function TasksPage() {
             <p className="px-5 py-6 text-sm text-gray-400">Cargando…</p>
           ) : visibleOpen.length === 0 ? (
             <p className="px-5 py-6 text-sm text-gray-500">No hay tareas pendientes. 🎉</p>
-          ) : visibleOpen.map((t) => <TaskRow key={t.task_id} t={t} onToggle={toggle} onDueChange={changeDue} />)}
+          ) : visibleOpen.map((t) => <TaskRow key={t.task_id} t={t} onToggle={toggle} onDueChange={changeDue} onEdit={editTask} onDelete={removeTask} />)}
         </div>
       </section>
 
@@ -159,9 +206,46 @@ export default function TasksPage() {
         <section>
           <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">Hechas en las últimas 2 semanas</h2>
           <div className="divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
-            {visibleDone.map((t) => <TaskRow key={t.task_id} t={t} onToggle={toggle} onDueChange={changeDue} />)}
+            {visibleDone.map((t) => <TaskRow key={t.task_id} t={t} onToggle={toggle} onDueChange={changeDue} onEdit={editTask} onDelete={removeTask} />)}
           </div>
         </section>
+      )}
+
+      <section className="mt-10">
+        <button onClick={() => setShowDeleted((v) => !v)}
+          className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 hover:text-gray-600">
+          {showDeleted ? "▾" : "▸"} Eliminadas (últimos 30 días)
+        </button>
+        {showDeleted && (
+          <div className="mt-2 divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
+            {deleted === null ? (
+              <p className="px-5 py-4 text-sm text-gray-400">Cargando…</p>
+            ) : deleted.length === 0 ? (
+              <p className="px-5 py-4 text-sm text-gray-500">No has eliminado ninguna tarea.</p>
+            ) : deleted.map((t) => (
+              <div key={t.task_id} className="flex items-start gap-3 px-5 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm leading-snug text-gray-500">{t.text}</p>
+                  <p className="mt-1 text-xs text-gray-400">
+                    {t.category ?? "OPS"} · {t.source === "manual" ? "Own" : t.meeting_title} · eliminada {formatDate(t.deleted_at)}
+                  </p>
+                </div>
+                <button onClick={() => restore(t.task_id)} className="shrink-0 text-xs font-medium text-indigo-600 hover:text-indigo-800">
+                  Restaurar
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {toast && (
+        <div role="status" className="fixed bottom-6 left-1/2 z-50 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-4 rounded-lg bg-gray-900 px-4 py-2.5 text-sm text-white shadow-lg">
+          <span className="truncate">Tarea eliminada: {toast.text}</span>
+          <button onClick={() => restore(toast.task_id)} className="shrink-0 font-semibold text-indigo-300 hover:text-indigo-200">
+            Deshacer
+          </button>
+        </div>
       )}
     </div>
   );
@@ -224,13 +308,21 @@ function FilterChip({ active, onClick, label }: { active: boolean; onClick: () =
   );
 }
 
-function TaskRow({ t, onToggle, onDueChange }: {
-  t: TaskView; onToggle: (t: TaskView) => void; onDueChange: (t: TaskView, dueDate: string | null) => void;
+function TaskRow({ t, onToggle, onDueChange, onEdit, onDelete }: {
+  t: TaskView;
+  onToggle: (t: TaskView) => void;
+  onDueChange: (t: TaskView, dueDate: string | null) => void;
+  onEdit: (t: TaskView, edit: TaskEdit) => void;
+  onDelete: (t: TaskView) => void;
 }) {
+  const [editing, setEditing] = useState(false);
   const old = !t.done && t.age_days >= 14;
   const own = t.source === "manual";
+  if (editing) {
+    return <TaskEditor t={t} onCancel={() => setEditing(false)} onSave={(edit) => { onEdit(t, edit); setEditing(false); }} />;
+  }
   return (
-    <div className="flex items-start gap-3 px-5 py-3.5">
+    <div className="group flex items-start gap-3 px-5 py-3.5">
       <input type="checkbox" checked={t.done} onChange={() => onToggle(t)}
         className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-gray-300 accent-indigo-600" />
       <div className="min-w-0 flex-1">
@@ -250,7 +342,44 @@ function TaskRow({ t, onToggle, onDueChange }: {
           <p className="mt-1 text-xs text-indigo-500">Motivo: {t.done_evidence}</p>
         )}
       </div>
+      <div className="flex shrink-0 gap-2 text-xs text-gray-300 transition-colors group-hover:text-gray-400">
+        <button onClick={() => setEditing(true)} aria-label="Editar tarea" title="Editar" className="hover:text-indigo-600">✎</button>
+        <button onClick={() => onDelete(t)} aria-label="Eliminar tarea" title="Eliminar" className="hover:text-red-600">🗑</button>
+      </div>
     </div>
+  );
+}
+
+function TaskEditor({ t, onSave, onCancel }: { t: TaskView; onSave: (edit: TaskEdit) => void; onCancel: () => void }) {
+  const [text, setText] = useState(t.text);
+  const [category, setCategory] = useState(t.category ?? "OPS");
+  const [dueDate, setDueDate] = useState(t.due_date ?? "");
+  const valid = text.trim().length >= 3;
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (valid) onSave({ text: text.trim(), category, due_date: dueDate || null });
+  }
+
+  return (
+    <form onSubmit={submit} onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }} className="space-y-2 bg-indigo-50/40 px-5 py-3">
+      <input value={text} onChange={(e) => setText(e.target.value)} autoFocus maxLength={500} aria-label="Texto de la tarea"
+        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-indigo-400 focus:outline-none" />
+      <div className="flex flex-wrap items-center gap-2">
+        <select value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Categoría"
+          className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 focus:border-indigo-400 focus:outline-none">
+          {Object.entries(CATEGORIES).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+        </select>
+        <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} aria-label="Fecha límite"
+          className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 focus:border-indigo-400 focus:outline-none" />
+        {dueDate && <button type="button" onClick={() => setDueDate("")} className="text-xs text-gray-500 hover:text-red-600">quitar fecha</button>}
+        <div className="ml-auto flex gap-2">
+          <button type="button" onClick={onCancel} className="rounded-lg px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-100">Cancelar</button>
+          <button type="submit" disabled={!valid}
+            className="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-40">Guardar</button>
+        </div>
+      </div>
+    </form>
   );
 }
 

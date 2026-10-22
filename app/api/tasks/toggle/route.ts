@@ -8,6 +8,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "taskId and done are required" }, { status: 400 });
   }
   const result = await setTaskDone(body.taskId, body.done, body.done ? "laura" : undefined);
-  if (!result) return NextResponse.json({ error: "Task not found" }, { status: 404 });
+  if ("error" in result) return NextResponse.json({ error: result.error }, { status: result.status });
   return NextResponse.json({ ok: true });
 }

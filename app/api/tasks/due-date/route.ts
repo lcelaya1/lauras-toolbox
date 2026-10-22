@@ -12,6 +12,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "dueDate must be YYYY-MM-DD or null" }, { status: 400 });
   }
   const result = await setDueDate(body.taskId, dueDate);
-  if (!result) return NextResponse.json({ error: "Task not found" }, { status: 404 });
+  if ("error" in result) return NextResponse.json({ error: result.error }, { status: result.status });
   return NextResponse.json({ ok: true, due_date: result.task.dueDate ?? null });
 }

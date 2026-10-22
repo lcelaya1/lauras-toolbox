@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { MeetingMeta, Task, TaskCategory } from "@/lib/meetings-store";
 
+// Deleted tasks stay in the stored list (so saves keep them restorable) but are never shown.
+const liveTasks = (tasks: Task[]) => tasks.filter((t) => !t.deletedAt);
+
 const CATEGORY_LABELS: Record<TaskCategory, string> = {
   FG:     "Future Game",
   COPSUP: "COP / SUP",
@@ -274,7 +277,8 @@ export default function MeetingsPage() {
   async function handleDeleteTask(meetingId: string, index: number) {
     const meeting = meetings.find((m) => m.id === meetingId);
     if (!meeting) return;
-    const updated: Task[] = meeting.tasks.filter((_, i) => i !== index);
+    // Soft delete: keep it stored (restorable from /tasks) but hidden here
+    const updated: Task[] = meeting.tasks.map((t, i) => i === index ? { ...t, deletedAt: new Date().toISOString() } : t);
     setMeetings((prev) => prev.map((m) => m.id === meetingId ? { ...m, tasks: updated } : m));
     await fetch(`/api/meetings/${meetingId}`, {
       method: "PATCH",
@@ -317,7 +321,8 @@ export default function MeetingsPage() {
     if (!text) return;
     const meeting = meetings.find((m) => m.id === meetingId);
     if (!meeting) return;
-    const updated: Task[] = meeting.tasks.map((t, i) => i === index ? { ...t, text } : t);
+    const updated: Task[] = meeting.tasks.map((t, i) => i !== index || t.text === text ? t
+      : { ...t, text, originalText: t.originalText ?? t.text });
     setMeetings((prev) => prev.map((m) => m.id === meetingId ? { ...m, tasks: updated } : m));
     await fetch(`/api/meetings/${meetingId}`, {
       method: "PATCH",
@@ -401,7 +406,7 @@ export default function MeetingsPage() {
                   <p className="text-sm font-medium text-gray-800 truncate">{m.title}</p>
                   <p className="text-[10px] text-gray-400 mt-0.5">{formatDateShort(m.createdAt)}</p>
                 </div>
-                {m.tasks.some(t => !t.done) && (
+                {liveTasks(m.tasks).some(t => !t.done) && (
                   <span className="shrink-0 mt-1 w-2 h-2 rounded-full bg-indigo-400" title="Tiene tareas pendientes" />
                 )}
               </button>
@@ -521,8 +526,8 @@ export default function MeetingsPage() {
                       ? "border-indigo-500 text-indigo-600"
                       : "border-transparent text-gray-400 hover:text-gray-600"}`}
                 >
-                  {tab === "tareas" && selected.tasks.length > 0
-                    ? `Tareas (${selected.tasks.filter(t => t.done).length}/${selected.tasks.length})`
+                  {tab === "tareas" && liveTasks(selected.tasks).length > 0
+                    ? `Tareas (${liveTasks(selected.tasks).filter(t => t.done).length}/${liveTasks(selected.tasks).length})`
                     : tab === "tareas" ? "Tareas" : "Notas"}
                 </button>
               ))}
@@ -555,14 +560,14 @@ export default function MeetingsPage() {
               {/* Tasks tab */}
               {activeTab === "tareas" && (
                 <div>
-                  {selected.tasks.length === 0 ? (
+                  {liveTasks(selected.tasks).length === 0 ? (
                     <p className="text-sm text-gray-400 italic">
                       {selected.summaryMarkdown
                         ? "No hay tareas asignadas a ti en esta reunión."
                         : "No hay tareas todavía. Pídele a Claude que extraiga las tareas de esta reunión."}
                     </p>
                   ) : (<>
-                  {selected.tasks.some(t => !t.done) && (
+                  {liveTasks(selected.tasks).some(t => !t.done) && (
                     <div className="mb-4">
                       <button
                         onClick={async () => {
@@ -594,13 +599,14 @@ export default function MeetingsPage() {
                         <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                           <path fillRule="evenodd" d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1ZM0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm9 1V5.5a1 1 0 0 0-2 0v4a1 1 0 0 0 .553.894l2.5 1.25a1 1 0 0 0 .894-1.788L9 9Z" clipRule="evenodd"/>
                         </svg>
-                        Enviar todas a Reminders ({selected.tasks.filter(t => !t.done).length})
+                        Enviar todas a Reminders ({liveTasks(selected.tasks).filter(t => !t.done).length})
                       </button>
                     </div>
                   )}
                   {(() => {
                     const grouped = new Map<string, { task: Task; index: number }[]>();
                     selected.tasks.forEach((task, i) => {
+                      if (task.deletedAt) return;
                       const cat = task.category ?? "OPS";
                       if (!grouped.has(cat)) grouped.set(cat, []);
                       grouped.get(cat)!.push({ task, index: i });

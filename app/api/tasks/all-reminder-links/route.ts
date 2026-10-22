@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   });
   const notes = `${meeting.title} · ${meetingDate}`;
 
-  const pending = meeting.tasks.filter((t) => !t.done);
+  const pending = meeting.tasks.filter((t) => !t.done && !t.deletedAt);
 
   const payload = JSON.stringify({
     tasks: pending.map((task) => ({

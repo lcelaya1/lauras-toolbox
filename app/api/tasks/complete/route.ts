@@ -19,8 +19,8 @@ export async function GET(req: NextRequest) {
   }
 
   const result = await setTaskDone(taskId, true, "reminders");
-  if (!result) {
-    return NextResponse.json({ error: "Task not found" }, { status: 404 });
+  if ("error" in result) {
+    return NextResponse.json({ error: result.error }, { status: result.status });
   }
 
   // Return a friendly HTML page so Safari auto-closes cleanly on iOS

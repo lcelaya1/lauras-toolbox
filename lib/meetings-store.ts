@@ -10,6 +10,8 @@ export interface Task {
   createdAt?: string;
   source?: "claude" | "manual";
   dueDate?: string;        // YYYY-MM-DD, only when a deadline was explicitly given
+  originalText?: string;   // text before the first edit, so re-extraction still sees it as a duplicate
+  deletedAt?: string;      // soft delete: hidden everywhere but restorable
   doneAt?: string;
   doneBy?: "laura" | "claude" | "reminders";
   doneEvidence?: string;   // why Claude marked it done (shown so Laura can undo)
@@ -72,6 +74,8 @@ export async function initDb(): Promise<void> {
     "ALTER TABLE meetings ADD COLUMN transcript_json TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE meetings ADD COLUMN session_notes TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE meetings ADD COLUMN tasks TEXT NOT NULL DEFAULT '[]'",
+    "ALTER TABLE standalone_tasks ADD COLUMN original_text TEXT",
+    "ALTER TABLE standalone_tasks ADD COLUMN deleted_at TEXT",
   ]) {
     try { await client.execute(col); } catch { /* already exists */ }
   }
