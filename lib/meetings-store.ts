@@ -53,6 +53,18 @@ export async function initDb(): Promise<void> {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+    -- Laura's own tasks, not tied to any meeting (meeting tasks stay in meetings.tasks)
+    CREATE TABLE IF NOT EXISTS standalone_tasks (
+      id TEXT PRIMARY KEY,
+      text TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'OPS',
+      due_date TEXT,
+      created_at TEXT NOT NULL,
+      done INTEGER NOT NULL DEFAULT 0,
+      done_at TEXT,
+      done_by TEXT,
+      done_evidence TEXT
+    );
   `);
   // Add columns that may not exist in older DBs
   for (const col of [

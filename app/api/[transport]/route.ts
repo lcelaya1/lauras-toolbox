@@ -3,7 +3,7 @@ import { MCP_SCOPE, mcpResource } from "@/lib/auth/config";
 import { verifyAccessToken } from "@/lib/auth/store";
 import { z } from "zod";
 import { listMeetings } from "@/lib/meetings-store";
-import { addTasks, listTasks, setTaskDone } from "@/lib/meetings-tasks";
+import { addStandaloneTask, addTasks, listTasks, setTaskDone } from "@/lib/meetings-tasks";
 import { listRecordings } from "@/lib/blob-store";
 import { findUnsavedMeetings, saveMeetingsIfNew } from "@/lib/meetings-sync";
 import { getPendingThreads, getRecentlyReplied, getThread, listAccounts } from "@/lib/mail";
@@ -147,10 +147,30 @@ ${CATEGORY_HELP}`,
     );
 
     server.registerTool(
+      "add_task",
+      {
+        title: "Add Own Task",
+        description: `Add a standalone task for Laura that is not tied to any meeting. Use when Laura asks directly, e.g. "add a task…", "remind me to…", "put … on my list", "I need to…". For tasks extracted from a meeting, use save_tasks with the meeting ID instead.
+If an open standalone task with the same text already exists, its ID is returned and nothing is added, so calling it again is safe.
+${CATEGORY_HELP}`,
+        inputSchema: {
+          text: z.string().min(3).max(500).describe("Task description, short and actionable"),
+          category: z.enum(["FG", "COPSUP", "VEN", "4o", "WF", "OPS", "PFGs", "TiB"]).default("OPS")
+            .describe("Project category. Default OPS if unclear."),
+          due_date: z.iso.date().optional().describe("Due date as YYYY-MM-DD, only if Laura gave one"),
+        },
+      },
+      async ({ text, category, due_date }) => {
+        const r = await addStandaloneTask(text, category, due_date);
+        return { content: [{ type: "text" as const, text: JSON.stringify({ task_id: r.task_id, already_existed: r.duplicate }) }] };
+      },
+    );
+
+    server.registerTool(
       "list_tasks",
       {
         title: "List Laura's Tasks",
-        description: "All of Laura's open tasks across meetings (oldest meeting first, with age in days, category and meeting), plus tasks marked done within done_since_hours. Read-only.",
+        description: "All of Laura's open tasks (oldest first, with age in days and category), plus tasks marked done within done_since_hours. Includes meeting tasks (source \"meeting\", with the meeting) and her own standalone tasks (source \"manual\", meeting_title \"Own task\", meeting_id null, meeting_date = creation date, due_date when set). Read-only.",
         inputSchema: {
           done_since_hours: z.number().int().min(0).max(24 * 31).default(0)
             .describe("Also return tasks completed in this many hours (e.g. 24 for a day review). 0 = none."),

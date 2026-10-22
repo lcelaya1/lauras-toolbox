@@ -10,9 +10,11 @@ interface TaskView {
   done_at: string | null;
   done_by: string | null;
   done_evidence: string | null;
-  meeting_id: string;
+  source?: "meeting" | "manual";
+  meeting_id: string | null;
   meeting_title: string;
   meeting_date: string;
+  due_date?: string | null;
   age_days: number;
 }
 
@@ -25,6 +27,18 @@ const DONE_BY: Record<string, string> = { laura: "tú", claude: "Claude", remind
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+}
+
+// due is YYYY-MM-DD; parse as a local date so it doesn't shift a day in Madrid
+function formatDue(due: string) {
+  const [y, m, d] = due.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+}
+
+function isOverdue(due: string) {
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  return due < todayKey;
 }
 
 function ageLabel(days: number) {
@@ -79,9 +93,11 @@ export default function TasksPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-gray-900">Mis tareas</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Tareas tuyas extraídas de las reuniones. Las más antiguas primero.
+          Tareas tuyas de las reuniones y las que añades tú. Las más antiguas primero.
         </p>
       </div>
+
+      <AddTaskForm onAdded={load} />
 
       <div className="mb-6 flex flex-wrap gap-1.5">
         <FilterChip active={category === "all"} onClick={() => setCategory("all")} label={`Todas · ${open?.length ?? 0}`} />
@@ -113,6 +129,54 @@ export default function TasksPage() {
   );
 }
 
+function AddTaskForm({ onAdded }: { onAdded: () => Promise<void> }) {
+  const [text, setText] = useState("");
+  const [category, setCategory] = useState("OPS");
+  const [dueDate, setDueDate] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (text.trim().length < 3 || saving) return;
+    setSaving(true);
+    setError(null);
+    const res = await fetch("/api/tasks/add", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: text.trim(), category, dueDate: dueDate || undefined }),
+    });
+    setSaving(false);
+    if (!res.ok) {
+      setError((await res.json().catch(() => null))?.error ?? "No se pudo añadir la tarea");
+      return;
+    }
+    setText("");
+    setDueDate("");
+    await onAdded();
+  }
+
+  return (
+    <form onSubmit={submit} className="mb-6 rounded-xl border border-gray-200 bg-white p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Añadir tarea…" maxLength={500}
+          className="min-w-0 flex-1 basis-60 rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-400 focus:outline-none" />
+        <select value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Categoría"
+          className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm text-gray-700 focus:border-indigo-400 focus:outline-none">
+          {Object.entries(CATEGORIES).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+        </select>
+        <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} aria-label="Fecha límite (opcional)"
+          className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm text-gray-700 focus:border-indigo-400 focus:outline-none" />
+        <button type="submit" disabled={saving || text.trim().length < 3}
+          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40">
+          {saving ? "Añadiendo…" : "Añadir"}
+        </button>
+      </div>
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+    </form>
+  );
+}
+
 function FilterChip({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
   return (
     <button onClick={onClick}
@@ -124,6 +188,8 @@ function FilterChip({ active, onClick, label }: { active: boolean; onClick: () =
 
 function TaskRow({ t, onToggle }: { t: TaskView; onToggle: (t: TaskView) => void }) {
   const old = !t.done && t.age_days >= 14;
+  const own = t.source === "manual";
+  const overdue = !t.done && !!t.due_date && isOverdue(t.due_date);
   return (
     <div className="flex items-start gap-3 px-5 py-3.5">
       <input type="checkbox" checked={t.done} onChange={() => onToggle(t)}
@@ -132,8 +198,13 @@ function TaskRow({ t, onToggle }: { t: TaskView; onToggle: (t: TaskView) => void
         <p className={`text-sm leading-snug ${t.done ? "text-gray-400 line-through" : "text-gray-900"}`}>{t.text}</p>
         <p className="mt-1 text-xs text-gray-400">
           <span className="font-semibold text-indigo-600">{t.category ?? "OPS"}</span>
-          {" · "}{t.meeting_title} · {formatDate(t.meeting_date)}
+          {" · "}
+          {own
+            ? <span className="rounded bg-gray-100 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-gray-500">Own</span>
+            : t.meeting_title}
+          {" · "}{formatDate(t.meeting_date)}
           {!t.done && <span className={old ? "text-amber-600" : ""}> · {ageLabel(t.age_days)}</span>}
+          {t.due_date && <span className={overdue ? "font-medium text-red-600" : "text-gray-500"}> · vence {formatDue(t.due_date)}</span>}
           {t.done && t.done_at && <> · hecha {formatDate(t.done_at)} por {DONE_BY[t.done_by ?? ""] ?? "ti"}</>}
         </p>
         {t.done && t.done_by === "claude" && t.done_evidence && (
