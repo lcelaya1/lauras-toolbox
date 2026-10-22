@@ -3,7 +3,7 @@ import { MCP_SCOPE, mcpResource } from "@/lib/auth/config";
 import { verifyAccessToken } from "@/lib/auth/store";
 import { z } from "zod";
 import { listMeetings } from "@/lib/meetings-store";
-import { addStandaloneTask, addTasks, listTasks, setTaskDone } from "@/lib/meetings-tasks";
+import { addStandaloneTask, addTasks, listTasks, setDueDate, setTaskDone } from "@/lib/meetings-tasks";
 import { listRecordings } from "@/lib/blob-store";
 import { findUnsavedMeetings, saveMeetingsIfNew } from "@/lib/meetings-sync";
 import { getPendingThreads, getRecentlyReplied, getThread, listAccounts } from "@/lib/mail";
@@ -129,18 +129,20 @@ ${CATEGORY_HELP}`,
             text: z.string().min(3).max(500).describe("Task description, short and actionable"),
             category: z.enum(["FG", "COPSUP", "VEN", "4o", "WF", "OPS", "PFGs", "TiB"])
               .describe("Project category for this task. Default to OPS if unclear."),
+            due_date: z.iso.date().optional()
+              .describe("Deadline as YYYY-MM-DD, only if one was explicitly stated in the meeting. Never guess."),
           })).max(30).describe("Tasks owned by Laura"),
         },
       },
       async ({ meetingId, tasks }) => {
-        const result = await addTasks(meetingId, tasks);
+        const result = await addTasks(meetingId, tasks.map((t) => ({ text: t.text, category: t.category, dueDate: t.due_date })));
         if (!result) {
           return { content: [{ type: "text" as const, text: `Meeting ${meetingId} not found.` }], isError: true };
         }
         return {
           content: [{
             type: "text" as const,
-            text: JSON.stringify({ added: result.added.map((t) => ({ task_id: t.id, text: t.text, category: t.category })), skipped_duplicates: result.skipped }, null, 2),
+            text: JSON.stringify({ added: result.added.map((t) => ({ task_id: t.id, text: t.text, category: t.category, due_date: t.dueDate ?? null })), skipped_duplicates: result.skipped }, null, 2),
           }],
         };
       },
@@ -170,15 +172,17 @@ ${CATEGORY_HELP}`,
       "list_tasks",
       {
         title: "List Laura's Tasks",
-        description: "All of Laura's open tasks (oldest first, with age in days and category), plus tasks marked done within done_since_hours. Includes meeting tasks (source \"meeting\", with the meeting) and her own standalone tasks (source \"manual\", meeting_title \"Own task\", meeting_id null, meeting_date = creation date, due_date when set). Read-only.",
+        description: "All of Laura's open tasks (with age in days and category), plus tasks marked done within done_since_hours. Includes meeting tasks (source \"meeting\", with the meeting) and her own standalone tasks (source \"manual\", meeting_title \"Own task\", meeting_id null, meeting_date = creation date). Every task has due_date (YYYY-MM-DD or null), days_until_due (negative when overdue, 0 = due today, null without a date) and is_overdue. Read-only.",
         inputSchema: {
           done_since_hours: z.number().int().min(0).max(24 * 31).default(0)
             .describe("Also return tasks completed in this many hours (e.g. 24 for a day review). 0 = none."),
+          sort: z.enum(["age", "due"]).default("age")
+            .describe("\"age\" (default): oldest first. \"due\": overdue first, then nearest due date, then tasks without a date."),
         },
         annotations: { readOnlyHint: true },
       },
-      async ({ done_since_hours }) => {
-        const { open, recently_done } = await listTasks({ doneSinceHours: done_since_hours || undefined });
+      async ({ done_since_hours, sort }) => {
+        const { open, recently_done } = await listTasks({ doneSinceHours: done_since_hours || undefined, sort });
         return { content: [{ type: "text" as const, text: JSON.stringify({ open_count: open.length, open, recently_done }, null, 2) }] };
       },
     );
@@ -201,6 +205,23 @@ ${CATEGORY_HELP}`,
         const r = await setTaskDone(task_id, true, marked_by, marked_by === "claude" ? evidence : undefined);
         if (!r) return { content: [{ type: "text" as const, text: `Task ${task_id} not found.` }], isError: true };
         return { content: [{ type: "text" as const, text: JSON.stringify({ ok: true, task_id, text: r.task.text, meeting: r.meetingTitle, done_by: marked_by }) }] };
+      },
+    );
+
+    server.registerTool(
+      "set_due_date",
+      {
+        title: "Set Task Due Date",
+        description: "Set, change or clear the deadline of an existing task (meeting or own task, open or done). Use when Laura gives or changes a deadline for a task that already exists. Only set dates that were explicitly stated; never guess or infer a deadline. Pass due_date null to clear it.",
+        inputSchema: {
+          task_id: z.string().uuid(),
+          due_date: z.iso.date().nullable().describe("YYYY-MM-DD, or null to clear the due date"),
+        },
+      },
+      async ({ task_id, due_date }) => {
+        const r = await setDueDate(task_id, due_date);
+        if (!r) return { content: [{ type: "text" as const, text: `Task ${task_id} not found.` }], isError: true };
+        return { content: [{ type: "text" as const, text: JSON.stringify({ ok: true, task_id, text: r.task.text, meeting: r.meetingTitle, done: r.task.done, due_date: r.task.dueDate ?? null }) }] };
       },
     );
 

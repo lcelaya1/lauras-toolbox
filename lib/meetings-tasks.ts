@@ -39,16 +39,19 @@ const normalize = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u03
 
 // Add-only: tasks already on the meeting (same text, ignoring case/accents/punctuation)
 // are skipped; existing tasks and their done state are never touched.
-export async function addTasks(meetingId: string, incoming: { text: string; category: TaskCategory }[]) {
+export async function addTasks(meetingId: string, incoming: { text: string; category: TaskCategory; dueDate?: string }[]) {
   return modifyTasks(meetingId, (tasks) => {
     const seen = new Set(tasks.map((t) => normalize(t.text)));
     const added: Task[] = [];
     const skipped: string[] = [];
-    for (const { text, category } of incoming) {
+    for (const { text, category, dueDate } of incoming) {
       const key = normalize(text);
       if (!key || seen.has(key)) { skipped.push(text); continue; }
       seen.add(key);
-      added.push({ id: crypto.randomUUID(), text: text.trim(), done: false, category, createdAt: new Date().toISOString(), source: "claude" });
+      added.push({
+        id: crypto.randomUUID(), text: text.trim(), done: false, category, createdAt: new Date().toISOString(), source: "claude",
+        ...(dueDate ? { dueDate } : {}),
+      });
     }
     return { tasks: [...tasks, ...added], result: { added, skipped } };
   });
@@ -91,6 +94,7 @@ function standaloneToTask(r: Record<string, unknown>): Task {
     done: Number(r.done) === 1,
     category: r.category as TaskCategory,
     createdAt: String(r.created_at),
+    dueDate: (r.due_date as string | null) ?? undefined,
     doneAt: (r.done_at as string | null) ?? undefined,
     doneBy: (r.done_by as Task["doneBy"] | null) ?? undefined,
     doneEvidence: (r.done_evidence as string | null) ?? undefined,
@@ -131,6 +135,39 @@ export async function setTaskDone(
   return task ? { task, meetingTitle: found.meetingTitle } : null;
 }
 
+// Sets (or with null, clears) the due date of a meeting or standalone task, open or done.
+export async function setDueDate(taskId: string, dueDate: string | null): Promise<{ task: Task; meetingTitle: string } | null> {
+  await initDb();
+  const client = db();
+  const res = await client.execute({ sql: "UPDATE standalone_tasks SET due_date = ? WHERE id = ?", args: [dueDate, taskId] });
+  if (res.rowsAffected) {
+    const { rows } = await client.execute({ sql: "SELECT * FROM standalone_tasks WHERE id = ?", args: [taskId] });
+    return { task: standaloneToTask(rows[0] as Record<string, unknown>), meetingTitle: OWN_TASK_TITLE };
+  }
+  const found = await findTask(taskId);
+  if (!found) return null;
+  const task = await modifyTasks(found.meetingId, (tasks) => {
+    let changed: Task | null = null;
+    const next = tasks.map((t) => {
+      if (t.id !== taskId) return t;
+      changed = { ...t, dueDate: dueDate ?? undefined };
+      return changed;
+    });
+    return { tasks: next, result: changed as Task | null };
+  });
+  return task ? { task, meetingTitle: found.meetingTitle } : null;
+}
+
+// Today's date in Madrid as YYYY-MM-DD (the server runs in UTC).
+function todayInMadrid(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid" }).format(new Date());
+}
+
+function daysBetween(from: string, to: string): number {
+  const utc = (d: string) => { const [y, m, day] = d.split("-").map(Number); return Date.UTC(y, m - 1, day); };
+  return Math.round((utc(to) - utc(from)) / 86_400_000);
+}
+
 export interface TaskView {
   task_id: string;
   text: string;
@@ -144,12 +181,17 @@ export interface TaskView {
   meeting_title: string;          // "Own task" for standalone tasks
   meeting_date: string;           // standalone tasks: creation date
   due_date: string | null;
+  days_until_due: number | null;  // negative when overdue, 0 = due today (Madrid)
+  is_overdue: boolean;
   age_days: number;
 }
 
-// Open tasks (oldest first), plus tasks completed within the given window.
-// Standalone tasks are merged in by creation date.
-export async function listTasks(opts: { doneSinceHours?: number } = {}): Promise<{ open: TaskView[]; recently_done: TaskView[] }> {
+// Open tasks plus tasks completed within the given window. Standalone tasks are merged
+// in by creation date. sort "age" (default): oldest first; "due": overdue first, then
+// nearest due date, then tasks without a date (oldest first within ties).
+export async function listTasks(
+  opts: { doneSinceHours?: number; sort?: "age" | "due" } = {},
+): Promise<{ open: TaskView[]; recently_done: TaskView[] }> {
   await initDb();
   const client = db();
   const [meetings, standalone] = await Promise.all([
@@ -159,7 +201,10 @@ export async function listTasks(opts: { doneSinceHours?: number } = {}): Promise
   const since = opts.doneSinceHours ? Date.now() - opts.doneSinceHours * 3_600_000 : null;
   const open: TaskView[] = [];
   const recentlyDone: TaskView[] = [];
-  const add = (t: Task, meeting: { id: string | null; title: string; date: string }, dueDate: string | null) => {
+  const today = todayInMadrid();
+  const add = (t: Task, meeting: { id: string | null; title: string; date: string }) => {
+    const dueDate = t.dueDate ?? null;
+    const daysUntilDue = dueDate ? daysBetween(today, dueDate) : null;
     const view: TaskView = {
       task_id: t.id,
       text: t.text,
@@ -173,6 +218,8 @@ export async function listTasks(opts: { doneSinceHours?: number } = {}): Promise
       meeting_title: meeting.title,
       meeting_date: meeting.date,
       due_date: dueDate,
+      days_until_due: daysUntilDue,
+      is_overdue: !t.done && daysUntilDue !== null && daysUntilDue < 0,
       age_days: Math.floor((Date.now() - new Date(meeting.date).getTime()) / 86_400_000),
     };
     if (!t.done) open.push(view);
@@ -181,12 +228,15 @@ export async function listTasks(opts: { doneSinceHours?: number } = {}): Promise
   for (const r of meetings.rows) {
     let tasks: Task[] = [];
     try { tasks = JSON.parse(String(r.tasks)); } catch { continue; }
-    for (const t of tasks) add(t, { id: String(r.id), title: String(r.title), date: String(r.created_at) }, null);
+    for (const t of tasks) add(t, { id: String(r.id), title: String(r.title), date: String(r.created_at) });
   }
   for (const r of standalone.rows) {
     const t = standaloneToTask(r as Record<string, unknown>);
-    add(t, { id: null, title: OWN_TASK_TITLE, date: t.createdAt! }, (r.due_date as string | null) ?? null);
+    add(t, { id: null, title: OWN_TASK_TITLE, date: t.createdAt! });
   }
-  const byDate = (a: TaskView, b: TaskView) => new Date(a.meeting_date).getTime() - new Date(b.meeting_date).getTime();
-  return { open: open.sort(byDate), recently_done: recentlyDone.sort(byDate) };
+  const byAge = (a: TaskView, b: TaskView) => new Date(a.meeting_date).getTime() - new Date(b.meeting_date).getTime();
+  const byDue = (a: TaskView, b: TaskView) =>
+    (a.days_until_due ?? Infinity) - (b.days_until_due ?? Infinity) || byAge(a, b);
+  const order = opts.sort === "due" ? byDue : byAge;
+  return { open: open.sort(order), recently_done: recentlyDone.sort(order) };
 }

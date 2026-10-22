@@ -15,8 +15,12 @@ interface TaskView {
   meeting_title: string;
   meeting_date: string;
   due_date?: string | null;
+  days_until_due?: number | null;
+  is_overdue?: boolean;
   age_days: number;
 }
+
+type SortMode = "age" | "due";
 
 const CATEGORIES: Record<string, string> = {
   FG: "Future Game", COPSUP: "COP / SUP", VEN: "Ventures", "4o": "4o", WF: "Workshop Fundamentals",
@@ -35,10 +39,20 @@ function formatDue(due: string) {
   return new Date(y, m - 1, d).toLocaleDateString("es-ES", { day: "numeric", month: "short" });
 }
 
-function isOverdue(due: string) {
+function todayKey() {
   const today = new Date();
-  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-  return due < todayKey;
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+}
+
+const byAge = (a: TaskView, b: TaskView) => new Date(a.meeting_date).getTime() - new Date(b.meeting_date).getTime();
+
+// Overdue first, then nearest due date, then tasks without a date (oldest first within ties).
+// YYYY-MM-DD strings compare correctly as text.
+function byDue(a: TaskView, b: TaskView) {
+  if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date) || byAge(a, b);
+  if (a.due_date) return -1;
+  if (b.due_date) return 1;
+  return byAge(a, b);
 }
 
 function ageLabel(days: number) {
@@ -52,6 +66,7 @@ export default function TasksPage() {
   const [open, setOpen] = useState<TaskView[] | null>(null);
   const [done, setDone] = useState<TaskView[]>([]);
   const [category, setCategory] = useState<string>("all");
+  const [sort, setSort] = useState<SortMode>("age");
 
   async function load() {
     const res = await fetch("/api/tasks/list", { cache: "no-store" });
@@ -70,7 +85,7 @@ export default function TasksPage() {
       setDone((prev) => [{ ...t, done: true, done_by: "laura", done_at: new Date().toISOString(), done_evidence: null }, ...prev]);
     } else {
       setDone((prev) => prev.filter((x) => x.task_id !== t.task_id));
-      setOpen((prev) => [...(prev ?? []), { ...t, done: false }].sort((a, b) => a.meeting_date.localeCompare(b.meeting_date)));
+      setOpen((prev) => [...(prev ?? []), { ...t, done: false }]);
     }
     await fetch("/api/tasks/toggle", {
       method: "POST",
@@ -79,13 +94,26 @@ export default function TasksPage() {
     });
   }
 
+  async function changeDue(t: TaskView, dueDate: string | null) {
+    const patch = (list: TaskView[]) => list.map((x) => x.task_id === t.task_id ? { ...x, due_date: dueDate } : x);
+    setOpen((prev) => prev && patch(prev));
+    setDone((prev) => patch(prev));
+    const res = await fetch("/api/tasks/due-date", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskId: t.task_id, dueDate }),
+    });
+    if (!res.ok) await load();
+  }
+
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
     for (const t of open ?? []) c[t.category ?? "OPS"] = (c[t.category ?? "OPS"] ?? 0) + 1;
     return c;
   }, [open]);
 
-  const visibleOpen = (open ?? []).filter((t) => category === "all" || (t.category ?? "OPS") === category);
+  const visibleOpen = (open ?? []).filter((t) => category === "all" || (t.category ?? "OPS") === category)
+    .sort(sort === "due" ? byDue : byAge);
   const visibleDone = done.filter((t) => category === "all" || (t.category ?? "OPS") === category);
 
   return (
@@ -93,17 +121,27 @@ export default function TasksPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-gray-900">Mis tareas</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Tareas tuyas de las reuniones y las que añades tú. Las más antiguas primero.
+          Tareas tuyas de las reuniones y las que añades tú.
         </p>
       </div>
 
       <AddTaskForm onAdded={load} />
 
-      <div className="mb-6 flex flex-wrap gap-1.5">
-        <FilterChip active={category === "all"} onClick={() => setCategory("all")} label={`Todas · ${open?.length ?? 0}`} />
-        {Object.entries(counts).sort().map(([c, n]) => (
-          <FilterChip key={c} active={category === c} onClick={() => setCategory(c)} label={`${CATEGORIES[c] ?? c} · ${n}`} />
-        ))}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-1.5">
+          <FilterChip active={category === "all"} onClick={() => setCategory("all")} label={`Todas · ${open?.length ?? 0}`} />
+          {Object.entries(counts).sort().map(([c, n]) => (
+            <FilterChip key={c} active={category === c} onClick={() => setCategory(c)} label={`${CATEGORIES[c] ?? c} · ${n}`} />
+          ))}
+        </div>
+        <div className="flex shrink-0 rounded-lg bg-gray-100 p-0.5 text-xs font-medium" role="group" aria-label="Ordenar">
+          {([["age", "Más antiguas"], ["due", "Fecha límite"]] as const).map(([mode, label]) => (
+            <button key={mode} onClick={() => setSort(mode)} aria-pressed={sort === mode}
+              className={`rounded-md px-2.5 py-1 transition-colors ${sort === mode ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <section className="mb-10">
@@ -113,7 +151,7 @@ export default function TasksPage() {
             <p className="px-5 py-6 text-sm text-gray-400">Cargando…</p>
           ) : visibleOpen.length === 0 ? (
             <p className="px-5 py-6 text-sm text-gray-500">No hay tareas pendientes. 🎉</p>
-          ) : visibleOpen.map((t) => <TaskRow key={t.task_id} t={t} onToggle={toggle} />)}
+          ) : visibleOpen.map((t) => <TaskRow key={t.task_id} t={t} onToggle={toggle} onDueChange={changeDue} />)}
         </div>
       </section>
 
@@ -121,7 +159,7 @@ export default function TasksPage() {
         <section>
           <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">Hechas en las últimas 2 semanas</h2>
           <div className="divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
-            {visibleDone.map((t) => <TaskRow key={t.task_id} t={t} onToggle={toggle} />)}
+            {visibleDone.map((t) => <TaskRow key={t.task_id} t={t} onToggle={toggle} onDueChange={changeDue} />)}
           </div>
         </section>
       )}
@@ -186,10 +224,11 @@ function FilterChip({ active, onClick, label }: { active: boolean; onClick: () =
   );
 }
 
-function TaskRow({ t, onToggle }: { t: TaskView; onToggle: (t: TaskView) => void }) {
+function TaskRow({ t, onToggle, onDueChange }: {
+  t: TaskView; onToggle: (t: TaskView) => void; onDueChange: (t: TaskView, dueDate: string | null) => void;
+}) {
   const old = !t.done && t.age_days >= 14;
   const own = t.source === "manual";
-  const overdue = !t.done && !!t.due_date && isOverdue(t.due_date);
   return (
     <div className="flex items-start gap-3 px-5 py-3.5">
       <input type="checkbox" checked={t.done} onChange={() => onToggle(t)}
@@ -204,13 +243,48 @@ function TaskRow({ t, onToggle }: { t: TaskView; onToggle: (t: TaskView) => void
             : t.meeting_title}
           {" · "}{formatDate(t.meeting_date)}
           {!t.done && <span className={old ? "text-amber-600" : ""}> · {ageLabel(t.age_days)}</span>}
-          {t.due_date && <span className={overdue ? "font-medium text-red-600" : "text-gray-500"}> · vence {formatDue(t.due_date)}</span>}
           {t.done && t.done_at && <> · hecha {formatDate(t.done_at)} por {DONE_BY[t.done_by ?? ""] ?? "ti"}</>}
+          {" · "}<DueDate t={t} onChange={(d) => onDueChange(t, d)} />
         </p>
         {t.done && t.done_by === "claude" && t.done_evidence && (
           <p className="mt-1 text-xs text-indigo-500">Motivo: {t.done_evidence}</p>
         )}
       </div>
     </div>
+  );
+}
+
+// Shows the due date (red when overdue, amber when due today) and edits it inline.
+function DueDate({ t, onChange }: { t: TaskView; onChange: (dueDate: string | null) => void }) {
+  const [editing, setEditing] = useState(false);
+  const due = t.due_date ?? null;
+
+  if (editing) {
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <input type="date" autoFocus defaultValue={due ?? ""} aria-label="Fecha límite"
+          onChange={(e) => { if (e.target.value) { onChange(e.target.value); setEditing(false); } }}
+          onKeyDown={(e) => { if (e.key === "Escape") setEditing(false); }}
+          className="rounded border border-gray-200 px-1 py-px text-xs text-gray-700 focus:border-indigo-400 focus:outline-none" />
+        {due && <button onClick={() => { onChange(null); setEditing(false); }} className="text-gray-500 hover:text-red-600">quitar</button>}
+        <button onClick={() => setEditing(false)} aria-label="Cancelar" className="text-gray-400 hover:text-gray-600">✕</button>
+      </span>
+    );
+  }
+
+  if (!due) {
+    return <button onClick={() => setEditing(true)} className="text-gray-300 hover:text-indigo-600">+ fecha</button>;
+  }
+
+  const today = todayKey();
+  const tone = t.done ? "text-gray-400"
+    : due < today ? "font-medium text-red-600"
+    : due === today ? "font-medium text-amber-600"
+    : "text-gray-500";
+  const label = !t.done && due === today ? "vence hoy" : `vence ${formatDue(due)}`;
+  return (
+    <button onClick={() => setEditing(true)} title="Cambiar fecha límite" className={`${tone} hover:underline`}>
+      {label}{!t.done && due < today && " · vencida"}
+    </button>
   );
 }

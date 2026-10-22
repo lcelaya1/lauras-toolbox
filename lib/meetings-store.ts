@@ -9,6 +9,7 @@ export interface Task {
   category?: TaskCategory;
   createdAt?: string;
   source?: "claude" | "manual";
+  dueDate?: string;        // YYYY-MM-DD, only when a deadline was explicitly given
   doneAt?: string;
   doneBy?: "laura" | "claude" | "reminders";
   doneEvidence?: string;   // why Claude marked it done (shown so Laura can undo)
